@@ -1,2 +1,3 @@
-io.github.springxpose.config.SpringXposeAutoConfiguration
-io.github.springxpose.config.SpringXposeOpenApiAutoConfiguration
+com.notablogger.springxpose.config.SpringXposeAutoConfiguration
+com.notablogger.springxpose.config.SpringXposeOpenApiAutoConfiguration
+
