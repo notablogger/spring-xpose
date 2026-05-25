@@ -53,3 +53,4 @@ jobs:
           name: v${{ steps.version.outputs.value }}
           generate_release_notes: true
           files: release-artifacts/*.jar
+
