@@ -37,11 +37,11 @@ jobs:
 
       - name: Bundle staging into zip
         run: |
-          mkdir -p bundle
-          cd annotations/build/staging-deploy && zip -r ../../../bundle/annotations.zip . && cd -
-          cd processor/build/staging-deploy  && zip -r ../../../bundle/processor.zip  . && cd -
-          cd starter/build/staging-deploy    && zip -r ../../../bundle/starter.zip    . && cd -
-          cd bundle && zip -r ../central-bundle.zip . && cd -
+          mkdir -p central-bundle
+          cp -r annotations/build/staging-deploy/. central-bundle/
+          cp -r processor/build/staging-deploy/.  central-bundle/
+          cp -r starter/build/staging-deploy/.    central-bundle/
+          cd central-bundle && zip -r ../central-bundle.zip . && cd -
 
       - name: Upload bundle to Maven Central Portal
         run: |
@@ -67,4 +67,3 @@ jobs:
           files: release-artifacts/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
