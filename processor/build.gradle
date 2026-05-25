@@ -1,0 +1,71 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+ext {
+    springBootVersion = '3.3.4'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
+    }
+}
+
+dependencies {
+    implementation project(':annotations')
+    implementation 'com.squareup:javapoet:1.13.0'
+    implementation 'com.google.auto.service:auto-service:1.1.1'
+    annotationProcessor 'com.google.auto.service:auto-service:1.1.1'
+
+    compileOnly 'jakarta.persistence:jakarta.persistence-api:3.1.0'
+    compileOnly 'org.springframework:spring-web:6.1.0'
+    compileOnly 'org.springframework:spring-context:6.1.0'
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure'
+    compileOnly 'org.springframework.security:spring-security-web'
+    compileOnly 'org.springframework.security:spring-security-config'
+    compileOnly 'org.springframework.graphql:spring-graphql:1.3.2'
+    compileOnly 'jakarta.validation:jakarta.validation-api:3.0.2'
+
+    testImplementation 'com.google.testing.compile:compile-testing:0.21.0'
+    testImplementation 'jakarta.persistence:jakarta.persistence-api:3.1.0'
+    testImplementation 'jakarta.validation:jakarta.validation-api:3.0.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testImplementation 'junit:junit:4.13.2'   // compile-testing requires JUnit 4 internally
+    testImplementation 'com.google.truth:truth:1.1.5'
+
+    // Runtime deps needed so compile-testing can compile the generated sources
+    testImplementation 'org.springframework:spring-web:6.1.0'
+    testImplementation 'org.springframework:spring-context:6.1.0'
+    testImplementation 'org.springframework.security:spring-security-web'
+    testImplementation 'org.springframework.security:spring-security-config'
+    testImplementation 'org.springframework.boot:spring-boot-autoconfigure'
+    testImplementation 'org.springframework.data:spring-data-jpa'   // needed for JpaRepository in generated code
+    testImplementation project(':starter')
+}
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs += ['-proc:full']
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId = 'io.github.spring-xpose'
+            artifactId = 'spring-xpose-processor'
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = 'https://maven.pkg.github.com/YOUR_GITHUB_USERNAME/spring-xpose'
+            credentials {
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}

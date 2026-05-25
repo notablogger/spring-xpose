@@ -4,12 +4,21 @@
 
 A Spring Boot starter library that automatically exposes JPA entities as full CRUD APIs —
 either standard REST (Spring MVC) or GraphQL — controlled by a single `@ExposeEntity`
-annotation on the entity class. The API mode (REST or GraphQL) is set once globally in
-`application.properties`. Security (OAuth2 or Basic Auth), roles, and exposed operations
-are configured per-entity on the annotation.
+annotation on the entity class.
 
-**Target stack:** Java 21 · Spring Boot 3.3.x · Spring Framework 6.x · Spring MVC ·
-Spring for GraphQL · Spring Security (Servlet) · Spring Data JPA
+At **compile time**, an annotation processor (APT) reads every class annotated with
+`@ExposeEntity` and generates real `.java` source files — one controller per entity for
+REST mode, one DataFetcher wiring class per entity for GraphQL mode. These files land in
+`build/generated/sources/annotationProcessor/` and are fully visible, debuggable, and
+navigable in any IDE.
+
+The API mode (REST or GraphQL) is set once globally in `application.properties`. Security
+(OAuth2 or Basic Auth), roles, and exposed operations are configured per-entity on the
+annotation.
+
+**Target stack:**
+Java 21 · Spring Boot 3.3.x · Spring Framework 6.x · Spring MVC · Spring for GraphQL ·
+Spring Security (Servlet) · Spring Data JPA · Gradle (Groovy DSL) · JavaPoet (code generation)
 
 ---
 
@@ -17,14 +26,16 @@ Spring for GraphQL · Spring Security (Servlet) · Spring Data JPA
 
 | Decision | Choice |
 |---|---|
+| Code generation | APT (`AbstractProcessor`) + JavaPoet — real `.java` files at compile time |
 | API mode toggle | Global property `spring-xpose.mode=REST\|GRAPHQL` — mutually exclusive |
-| Web layer | Spring MVC — standard synchronous `@RestController`, no WebFlux |
+| Web layer | Spring MVC — `@RestController`, `ResponseEntity<T>`, `List<T>` |
 | Repository layer | Spring Data JPA — blocking, straightforward |
-| Default auth | `AuthType.NONE` = permit all, no config required |
+| Default auth | `AuthType.NONE` = permit all, zero config required |
 | DTO layer | None in v1 — entities exposed directly |
 | NoSQL | Not in scope (v2 roadmap) |
-| Schema files | None — GraphQL schema generated 100% at runtime via reflection |
-| Annotation on | The `@Entity` class itself |
+| GraphQL schema files | None — schema generated at runtime from the generated wiring classes |
+| Build system | Gradle, Groovy DSL |
+| Publishing | GitHub Packages |
 
 ---
 
@@ -36,7 +47,7 @@ package io.github.springxpose.annotation;
 import java.lang.annotation.*;
 
 @Target(ElementType.TYPE)
-@Retention(RetentionPolicy.RUNTIME)
+@Retention(RetentionPolicy.SOURCE)   // consumed at compile time by the APT processor
 @Documented
 public @interface ExposeEntity {
 
@@ -59,7 +70,7 @@ public @interface ExposeEntity {
 
     /**
      * How to serialize relation fields.
-     * IDS_FOR_LIST_OBJECT_FOR_SINGLE: list endpoints return IDs, single-item returns full object (default).
+     * IDS_FOR_LIST_OBJECT_FOR_SINGLE: list endpoint returns IDs, single-item returns full object.
      * ALWAYS_IDS:    always serialize relations as ID values only.
      * ALWAYS_OBJECT: always serialize full nested object.
      */
@@ -100,67 +111,63 @@ public enum RelationMode { IDS_FOR_LIST_OBJECT_FOR_SINGLE, ALWAYS_IDS, ALWAYS_OB
 public enum AuthType     { NONE, BASIC, OAUTH2 }
 ```
 
+Note: annotation retention is `SOURCE` — the APT processor consumes it at compile time
+and generates `.java` files. The generated files are what Spring Boot loads at runtime.
+
 ---
 
 ## Project Structure
 
 ```
-spring-xpose-boot-starter/
+spring-xpose/
 │
-├── pom.xml                                     # parent POM
+├── settings.gradle                         # declares all subprojects
+├── build.gradle                            # root build — shared config
 │
-├── starter/                                    # the library module
-│   ├── pom.xml
-│   └── src/main/java/io/github/springxpose/
-│       │
-│       ├── annotation/
-│       │   ├── ExposeEntity.java
-│       │   ├── Operation.java
-│       │   ├── RelationMode.java
-│       │   └── AuthType.java
-│       │
+├── annotations/                            # module 1: annotation definitions only
+│   ├── build.gradle
+│   └── src/main/java/io/github/springxpose/annotation/
+│       ├── ExposeEntity.java
+│       ├── Operation.java
+│       ├── RelationMode.java
+│       └── AuthType.java
+│
+├── processor/                              # module 2: APT annotation processor
+│   ├── build.gradle
+│   └── src/main/java/io/github/springxpose/processor/
+│       ├── ExposeEntityProcessor.java      # AbstractProcessor entry point
 │       ├── model/
-│       │   └── EntityExposureMetadata.java     # record holding all resolved metadata
-│       │
-│       ├── registry/
-│       │   └── EntityExposureRegistry.java     # runtime store: entity class → metadata
-│       │
-│       ├── processor/
-│       │   └── EntityExposureProcessor.java    # BeanDefinitionRegistryPostProcessor
-│       │
-│       ├── repository/
-│       │   └── DynamicRepositoryFactory.java   # registers JpaRepository beans at runtime
-│       │
-│       ├── rest/
-│       │   ├── EntityController.java           # generic @RestController per entity
-│       │   └── RelationAwareSerializer.java    # Jackson: IDs vs object by operation context
-│       │
-│       ├── graphql/
-│       │   ├── SchemaGenerator.java            # builds RuntimeWiring at startup
-│       │   └── DataFetcherFactory.java         # DataFetcher per operation
-│       │
-│       ├── security/
-│       │   ├── SecurityConfigurerFactory.java  # builds SecurityFilterChain
-│       │   └── OperationRoleResolver.java      # resolves effective roles per HTTP method
-│       │
-│       ├── config/
-│       │   ├── SpringXposeProperties.java      # @ConfigurationProperties
-│       │   └── SpringXposeAutoConfiguration.java
-│       │
+│       │   └── EntityModel.java           # parsed metadata from annotation + entity class
+│       ├── generator/
+│       │   ├── RestControllerGenerator.java   # writes ProductController.java via JavaPoet
+│       │   ├── GraphQlWiringGenerator.java    # writes ProductGraphQlWiring.java via JavaPoet
+│       │   └── SecurityConfigurerGenerator.java # writes XposeSecurityConfigurer.java
 │       └── util/
-│           └── EntityNameUtils.java            # pluralize, lowercase, derive path/type names
+│           └── EntityNameUtils.java        # pluralize, lowercase, derive names
+│   └── src/main/resources/META-INF/services/
+│       └── javax.annotation.processing.Processor   # registers ExposeEntityProcessor
 │
+├── starter/                                # module 3: Spring Boot autoconfiguration
+│   ├── build.gradle
+│   └── src/main/java/io/github/springxpose/
+│       ├── config/
+│       │   ├── SpringXposeProperties.java
+│       │   └── SpringXposeAutoConfiguration.java
+│       └── serializer/
+│           └── RelationAwareSerializer.java  # Jackson serializer used by generated controllers
 │   └── src/main/resources/META-INF/spring/
 │       └── org.springframework.boot.autoconfigure.AutoConfiguration.imports
 │
-├── sample/                                     # runnable demo
-│   ├── pom.xml
+├── sample/                                 # module 4: runnable demo app
+│   ├── build.gradle
 │   └── src/main/java/io/github/springxpose/sample/
 │       ├── SampleApplication.java
 │       ├── entity/
 │       │   ├── Product.java
 │       │   └── Category.java
-│       └── DataLoader.java                     # CommandLineRunner with test data
+│       └── DataLoader.java
+│   └── src/main/resources/
+│       └── application.properties
 │
 └── .github/workflows/
     ├── ci.yml
@@ -168,313 +175,561 @@ spring-xpose-boot-starter/
     └── sample-build.yml
 ```
 
+**Why three separate modules?**
+- `annotations` has zero dependencies — users depend on it with `compileOnly` scope.
+- `processor` depends on `annotations` + JavaPoet — users depend on it with
+  `annotationProcessor` scope only (not in the runtime classpath).
+- `starter` is the only runtime dependency users add — it provides autoconfiguration,
+  the `RelationAwareSerializer`, and `SpringXposeProperties`.
+
 ---
 
-## `EntityExposureMetadata` Record
+## Module 1: `annotations/build.gradle`
+
+```groovy
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+dependencies {
+    // no dependencies — annotation definitions only
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId = 'io.github.spring-xpose'
+            artifactId = 'spring-xpose-annotations'
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = 'https://maven.pkg.github.com/YOUR_GITHUB_USERNAME/spring-xpose'
+            credentials {
+                username = System.getenv('GITHUB_ACTOR')
+                password = System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
+}
+```
+
+---
+
+## Module 2: `processor/build.gradle`
+
+```groovy
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+dependencies {
+    implementation project(':annotations')
+    implementation 'com.squareup:javapoet:1.13.0'
+
+    // needed to read JPA annotations from entity classes during processing
+    compileOnly 'jakarta.persistence:jakarta.persistence-api:3.1.0'
+
+    // Spring annotations needed to generate correct controller/security code
+    compileOnly 'org.springframework:spring-web:6.1.0'
+    compileOnly 'org.springframework:spring-context:6.1.0'
+    compileOnly 'org.springframework.boot:spring-boot-autoconfigure:3.3.4'
+}
+
+// disable incremental annotation processing for correctness
+tasks.withType(JavaCompile) {
+    options.compilerArgs += ['-proc:full']
+}
+```
+
+---
+
+## Module 3: `starter/build.gradle`
+
+```groovy
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+dependencies {
+    api project(':annotations')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+
+    // GraphQL — optional; only needed when spring-xpose.mode=GRAPHQL
+    compileOnly 'org.springframework.boot:spring-boot-starter-graphql'
+
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+}
+```
+
+---
+
+## Module 4: `sample/build.gradle`
+
+```groovy
+plugins {
+    id 'org.springframework.boot' version '3.3.4'
+    id 'java'
+}
+
+dependencies {
+    implementation project(':starter')
+
+    // the processor generates controllers at compile time
+    annotationProcessor project(':processor')
+    compileOnly project(':annotations')
+
+    runtimeOnly 'com.h2database:h2'
+}
+```
+
+---
+
+## Root `settings.gradle`
+
+```groovy
+rootProject.name = 'spring-xpose'
+
+include 'annotations'
+include 'processor'
+include 'starter'
+include 'sample'
+```
+
+---
+
+## Root `build.gradle`
+
+```groovy
+allprojects {
+    group = 'io.github.spring-xpose'
+    version = '0.1.0-SNAPSHOT'
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+        withSourcesJar()
+        withJavadocJar()
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+}
+```
+
+---
+
+## The Annotation Processor (`ExposeEntityProcessor`)
+
+This is the heart of the library. Implement as a standard Java APT processor.
+
+### `ExposeEntityProcessor.java`
 
 ```java
-public record EntityExposureMetadata(
-    Class<?>        entityClass,
-    Class<?>        idClass,        // resolved from @Id field via reflection
-    String          basePath,       // resolved path (annotation value or auto-derived)
-    Set<Operation>  operations,     // which operations to expose
-    RelationMode    relationMode,
-    AuthType        authType,
-    Set<String>     roles,
-    Set<String>     readRoles,
-    Set<String>     writeRoles
+@SupportedAnnotationTypes("io.github.springxpose.annotation.ExposeEntity")
+@SupportedSourceVersion(SourceVersion.RELEASE_21)
+@AutoService(Processor.class)   // use google/auto-service to generate META-INF/services entry
+public class ExposeEntityProcessor extends AbstractProcessor {
+
+    @Override
+    public boolean process(Set<? extends TypeElement> annotations,
+                           RoundEnvironment roundEnv) {
+
+        for (Element element : roundEnv.getElementsAnnotatedWith(ExposeEntity.class)) {
+            if (element.getKind() != ElementKind.CLASS) continue;
+
+            TypeElement entityClass = (TypeElement) element;
+            EntityModel model = EntityModel.parse(entityClass, processingEnv);
+
+            ApiMode mode = resolveMode();  // read from processor options or default REST
+
+            if (mode == ApiMode.REST) {
+                new RestControllerGenerator(processingEnv).generate(model);
+            } else {
+                new GraphQlWiringGenerator(processingEnv).generate(model);
+            }
+
+            new SecurityConfigurerGenerator(processingEnv).generate(model);
+        }
+        return true;
+    }
+}
+```
+
+Use `google/auto-service` (`com.google.auto.service:auto-service:1.1.1`) to avoid
+manually maintaining the `META-INF/services` file.
+
+### `EntityModel.java`
+
+A plain record parsed from the `TypeElement` at compile time:
+
+```java
+public record EntityModel(
+    String entityClassName,          // fully qualified, e.g. com.example.Product
+    String entitySimpleName,         // Product
+    String packageName,              // com.example
+    String idFieldName,              // id
+    String idClassName,              // java.lang.Long
+    String basePath,                 // products
+    List<FieldModel> fields,         // all non-static, non-transient fields
+    List<RelationFieldModel> relations, // fields annotated with @ManyToOne / @OneToMany etc.
+    Set<Operation> operations,
+    RelationMode relationMode,
+    AuthType authType,
+    Set<String> roles,
+    Set<String> readRoles,
+    Set<String> writeRoles
 ) {
-    /** Returns effective read roles: readRoles if non-empty, else roles. */
-    public Set<String> effectiveReadRoles() {
-        return readRoles.isEmpty() ? roles : readRoles;
-    }
-
-    /** Returns effective write roles: writeRoles if non-empty, else roles. */
-    public Set<String> effectiveWriteRoles() {
-        return writeRoles.isEmpty() ? roles : writeRoles;
+    public static EntityModel parse(TypeElement element, ProcessingEnvironment env) {
+        // Read @ExposeEntity annotation values
+        // Find @Id annotated field — emit compile error via env.getMessager() if missing
+        // Collect all fields, identify relation fields via @ManyToOne / @OneToMany etc.
+        // Derive basePath from annotation.path() or pluralized lowercase class name
     }
 }
 ```
 
----
-
-## `SpringXposeProperties` (`@ConfigurationProperties`)
-
+If `@Id` is not found, emit a **compile error** (not a runtime exception):
 ```java
-@ConfigurationProperties(prefix = "spring-xpose")
-public class SpringXposeProperties {
-
-    /** REST or GRAPHQL — mutually exclusive, application-wide. Default: REST */
-    private ApiMode mode = ApiMode.REST;
-
-    /** Base path prefix for all REST routes. Default: /api */
-    private String restBasePath = "/api";
-
-    /** GraphQL endpoint path. Default: /graphql */
-    private String graphqlPath = "/graphql";
-
-    public enum ApiMode { REST, GRAPHQL }
-
-    // getters + setters
-}
-```
-
-`application.properties` examples:
-```properties
-# Switch entire app to GraphQL mode
-spring-xpose.mode=GRAPHQL
-
-# Customize REST base path
-spring-xpose.rest-base-path=/api/v1
-```
-
----
-
-## Startup Scanner (`EntityExposureProcessor`)
-
-Implement `BeanDefinitionRegistryPostProcessor` + `ApplicationContextAware`:
-
-1. After context refresh, scan the classpath for classes annotated with **both**
-   `@jakarta.persistence.Entity` and `@ExposeEntity`.
-2. For each found class:
-   - Resolve `idClass` by finding the field annotated `@jakarta.persistence.Id` via
-     reflection. If not found, throw `EntityExposeConfigurationException` with a clear
-     message (entity name + missing annotation).
-   - Resolve `basePath`: use `annotation.path()` if non-blank, otherwise
-     `EntityNameUtils.toPlural(entityClass.getSimpleName().toLowerCase())`.
-   - Build `EntityExposureMetadata` record and register in `EntityExposureRegistry`.
-3. For each entity, call `DynamicRepositoryFactory` to register a `JpaRepository<T, ID>`
-   Spring bean if one does not already exist (check by generic type match against existing
-   bean definitions).
-4. Log at `INFO` for each entity:
-   ```
-   [SpringXpose] Exposing Product   → REST /api/products   ops=[FIND_ALL, FIND_BY_ID, CREATE, UPDATE] auth=OAUTH2
-   [SpringXpose] Exposing Category  → GRAPHQL               ops=[FIND_ALL, FIND_BY_ID, CREATE, UPDATE, DELETE] auth=BASIC
-   ```
-
----
-
-## REST Layer (active when `spring-xpose.mode=REST`)
-
-### `EntityController`
-
-For each `EntityExposureMetadata`, programmatically register a Spring MVC controller bean
-at runtime using `RequestMappingHandlerMapping`. Each controller handles only the
-operations listed in `metadata.operations()`.
-
-| Operation     | HTTP   | Path                         | Return type              | Status |
-|---------------|--------|------------------------------|--------------------------|--------|
-| `FIND_ALL`    | GET    | `{restBasePath}/{path}`      | `List<T>`                | 200    |
-| `FIND_BY_ID`  | GET    | `{restBasePath}/{path}/{id}` | `T`                      | 200 / 404 |
-| `CREATE`      | POST   | `{restBasePath}/{path}`      | `T`                      | 201    |
-| `UPDATE`      | PUT    | `{restBasePath}/{path}/{id}` | `T`                      | 200 / 404 |
-| `DELETE`      | DELETE | `{restBasePath}/{path}/{id}` | `void`                   | 204    |
-
-Implementation approach: create a single generic `EntityControllerHandler` class with
-all five methods. For each entity, register a `RequestMappingInfo` pointing at the
-correct handler method, bound to that entity's path and its `JpaRepository` instance.
-Use `RequestMappingHandlerMapping#registerMapping(...)` for dynamic registration.
-
-Response conventions:
-- `FIND_BY_ID` with no result → `ResponseEntity.notFound().build()` (404)
-- `UPDATE` with no result → `ResponseEntity.notFound().build()` (404)
-- `CREATE` → `ResponseEntity.status(HttpStatus.CREATED).body(saved)`
-- `DELETE` → `ResponseEntity.noContent().build()` (204)
-
-### `RelationAwareSerializer`
-
-A Jackson `JsonSerializer` registered via `Jackson2ObjectMapperBuilderCustomizer`.
-
-Uses a `ThreadLocal<SerializationContext>` (values: `LIST` or `SINGLE`) set by the
-handler before calling `repository.findAll()` or `repository.findById()`.
-
-Serialization behaviour per `RelationMode`:
-
-| Mode | LIST context | SINGLE context |
-|---|---|---|
-| `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | Relation field → ID value(s) | Relation field → full object |
-| `ALWAYS_IDS` | Relation field → ID value(s) | Relation field → ID value(s) |
-| `ALWAYS_OBJECT` | Relation field → full object | Relation field → full object |
-
-For `@ManyToOne`: serialize as the related entity's `@Id` field value (a single scalar).
-For `@OneToMany` / `@ManyToMany`: serialize as a `List` of ID values.
-Extract the `@Id` field from the related entity type via reflection.
-
-Handler usage:
-```java
-// FIND_ALL handler
-SerializationContext.set(LIST);
-List<T> results = repository.findAll();
-SerializationContext.clear();
-return ResponseEntity.ok(results);
-
-// FIND_BY_ID handler
-SerializationContext.set(SINGLE);
-T result = repository.findById(id).orElseThrow(...);
-SerializationContext.clear();
-return ResponseEntity.ok(result);
-```
-
----
-
-## GraphQL Layer (active when `spring-xpose.mode=GRAPHQL`)
-
-### `SchemaGenerator`
-
-Called at startup. Produces a `RuntimeWiring` and `TypeDefinitionRegistry` contributed
-to the application's `GraphQlSource` via `RuntimeWiringConfigurer`.
-
-**Types generated per entity** (via reflection over entity fields):
-
-```graphql
-# Object type
-type Product {
-  id: ID
-  name: String
-  price: Float
-  categoryId: ID          # @ManyToOne → ID by default (ALWAYS_IDS / IDS_FOR_LIST_OBJECT_FOR_SINGLE list)
-  # OR:
-  category: Category      # if ALWAYS_OBJECT
-}
-
-# Input type for CREATE (no id field; relations as IDs)
-input ProductInput {
-  name: String!
-  price: Float!
-  categoryId: ID
-}
-
-# Input type for UPDATE (id required; relations as IDs)
-input ProductUpdateInput {
-  id: ID!
-  name: String
-  price: Float
-  categoryId: ID
-}
-```
-
-**Queries registered** (only if operation is in `expose()`):
-```graphql
-findAllProducts:      [Product]
-findProductById(id: ID!): Product
-```
-
-**Mutations registered** (only if operation is in `expose()`):
-```graphql
-createProduct(input: ProductInput!):         Product
-updateProduct(input: ProductUpdateInput!):   Product
-deleteProduct(id: ID!):                      Boolean
-```
-
-**Relation handling:**
-- Input types always use IDs for relations (never nested objects) — avoids circular
-  reference issues and keeps mutations clean.
-- Object types: respect `RelationMode`. For `IDS_FOR_LIST_OBJECT_FOR_SINGLE`, register
-  two `GraphQLObjectType` variants — one with ID fields (used in list queries), one with
-  full nested types (used in single queries). Name them `Product` and `ProductDetail`
-  internally, but alias `findAllProducts` to return `[Product]` and `findProductById`
-  to return `ProductDetail`.
-- `ALWAYS_IDS`: all relation fields rendered as ID scalars in both queries.
-- `ALWAYS_OBJECT`: full nested type in both queries (ensure recursive types are handled
-  via `GraphQLTypeReference` to avoid infinite recursion).
-
-### `DataFetcherFactory`
-
-Wire `DataFetcher`s via `RuntimeWiringConfigurer`. Use `CompletableFuture` for
-async-compatible execution:
-
-```java
-// FIND_ALL
-env -> CompletableFuture.supplyAsync(() -> repository.findAll())
-
-// FIND_BY_ID
-env -> CompletableFuture.supplyAsync(() ->
-    repository.findById(parseId(env.getArgument("id"), metadata.idClass()))
-              .orElse(null))
-
-// CREATE
-env -> CompletableFuture.supplyAsync(() -> {
-    T entity = mapInputToEntity(env.getArgument("input"), metadata.entityClass());
-    return repository.save(entity);
-})
-
-// UPDATE
-env -> CompletableFuture.supplyAsync(() -> {
-    T entity = mapUpdateInputToEntity(env.getArgument("input"), metadata);
-    return repository.save(entity);
-})
-
-// DELETE
-env -> CompletableFuture.supplyAsync(() -> {
-    repository.deleteById(parseId(env.getArgument("id"), metadata.idClass()));
-    return true;
-})
-```
-
-`mapInputToEntity`: instantiate entity via no-arg constructor, set fields via reflection
-from the GraphQL arguments map. For relation fields (e.g. `categoryId`): look up the
-related entity by ID via its registered repository, then set the relation field.
-
----
-
-## Security Layer
-
-### `SecurityConfigurerFactory`
-
-Builds a single `SecurityFilterChain` (Spring MVC / Servlet) covering all exposed entity
-paths. Uses `HttpSecurity`.
-
-**Strategy per entity:**
-
-- `authType = NONE` → `permitAll()` on all methods for this entity's path pattern
-- `authType = BASIC` → enable `httpBasic()`, apply role rules below
-- `authType = OAUTH2` → enable `oauth2ResourceServer(oauth2 -> oauth2.jwt(...))`,
-  apply role rules below
-
-**Role rules per path (REST):**
-
-```java
-http.authorizeHttpRequests(auth -> auth
-    // Read operations
-    .requestMatchers(HttpMethod.GET, entityPath + "/**")
-        .hasAnyRole(effectiveReadRoles)    // or permitAll() if empty
-
-    // Write operations
-    .requestMatchers(HttpMethod.POST, entityPath)
-        .hasAnyRole(effectiveWriteRoles)
-    .requestMatchers(HttpMethod.PUT, entityPath + "/**")
-        .hasAnyRole(effectiveWriteRoles)
-    .requestMatchers(HttpMethod.DELETE, entityPath + "/**")
-        .hasAnyRole(effectiveWriteRoles)
+processingEnv.getMessager().printMessage(
+    Diagnostic.Kind.ERROR,
+    "@ExposeEntity: no @Id field found on " + element.getSimpleName(),
+    element
 );
 ```
-
-**GraphQL security:** Since all GraphQL traffic hits one path (`/graphql`), add a
-`OncePerRequestFilter` that:
-1. Reads and caches the request body (use `ContentCachingRequestWrapper`).
-2. Parses the operation string to detect `query` vs `mutation` keyword.
-3. Extracts the operation name (e.g. `createProduct` → maps to `Product` entity).
-4. Looks up the entity's metadata from `EntityExposureRegistry`.
-5. Validates the `Authorization` header against the entity's `authType` and applicable
-   read/write roles.
-6. Returns `401 Unauthorized` (no/invalid credentials) or `403 Forbidden` (wrong role)
-   if validation fails; otherwise calls `filterChain.doFilter(...)`.
-
-For OAuth2 JWT: use `JwtDecoder` configured from standard Spring Boot properties
-(`spring.security.oauth2.resourceserver.jwt.issuer-uri`).
-
-For Basic Auth: authenticate against `UserDetailsService`. The library provides a
-`@ConditionalOnMissingBean` default that reads from standard
-`spring.security.user.*` properties. Users can provide their own `UserDetailsService`
-bean to override.
-
-**Critical constraint:** Use `@Order(Ordered.LOWEST_PRECEDENCE - 10)` on the generated
-`SecurityFilterChain` so user-defined chains always take priority. The library adds to
-security, never replaces it.
+This stops the build with a clear message pointing to the exact entity class — far better
+than a runtime failure.
 
 ---
 
-## `SpringXposeAutoConfiguration`
+## REST Code Generation (`RestControllerGenerator`)
+
+Uses **JavaPoet** to generate one `@RestController` class per entity.
+
+### Generated output example for `Product`
+
+```java
+// Generated by spring-xpose — do not edit
+package com.example.generated;
+
+@RestController
+@RequestMapping("/api/products")
+public class ProductController {
+
+    private final ProductRepository repository;
+
+    public ProductController(ProductRepository repository) {
+        this.repository = repository;
+    }
+
+    // Generated only if Operation.FIND_ALL is in expose()
+    @GetMapping
+    public ResponseEntity<List<Product>> findAll() {
+        SerializationContext.set(SerializationContext.Mode.LIST);
+        try {
+            return ResponseEntity.ok(repository.findAll());
+        } finally {
+            SerializationContext.clear();
+        }
+    }
+
+    // Generated only if Operation.FIND_BY_ID is in expose()
+    @GetMapping("/{id}")
+    public ResponseEntity<Product> findById(@PathVariable Long id) {
+        SerializationContext.set(SerializationContext.Mode.SINGLE);
+        try {
+            return repository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+        } finally {
+            SerializationContext.clear();
+        }
+    }
+
+    // Generated only if Operation.CREATE is in expose()
+    @PostMapping
+    public ResponseEntity<Product> create(@RequestBody @Valid Product entity) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                             .body(repository.save(entity));
+    }
+
+    // Generated only if Operation.UPDATE is in expose()
+    @PutMapping("/{id}")
+    public ResponseEntity<Product> update(@PathVariable Long id,
+                                          @RequestBody @Valid Product entity) {
+        if (!repository.existsById(id)) return ResponseEntity.notFound().build();
+        entity.setId(id);
+        return ResponseEntity.ok(repository.save(entity));
+    }
+
+    // Generated only if Operation.DELETE is in expose()
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        if (!repository.existsById(id)) return ResponseEntity.notFound().build();
+        repository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+```
+
+### JavaPoet generation approach
+
+```java
+public class RestControllerGenerator {
+
+    public void generate(EntityModel model) {
+        MethodSpec findAll = MethodSpec.methodBuilder("findAll")
+            .addAnnotation(GetMapping.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(
+                ClassName.get(ResponseEntity.class),
+                ParameterizedTypeName.get(ClassName.get(List.class),
+                    ClassName.bestGuess(model.entityClassName()))))
+            .addStatement("$T.set($T.Mode.LIST)", SerializationContext.class,
+                          SerializationContext.class)
+            // ... add try/finally, repository call
+            .build();
+
+        TypeSpec controller = TypeSpec.classBuilder(model.entitySimpleName() + "Controller")
+            .addModifiers(Modifier.PUBLIC)
+            .addAnnotation(RestController.class)
+            .addAnnotation(AnnotationSpec.builder(RequestMapping.class)
+                .addMember("value", "$S", "/" + model.basePath())
+                .build())
+            .addField(repositoryField(model))
+            .addMethod(constructor(model))
+            .addMethod(findAll)
+            // ... other methods based on model.operations()
+            .build();
+
+        JavaFile.builder(model.packageName() + ".generated", controller)
+            .build()
+            .writeTo(processingEnv.getFiler());
+    }
+}
+```
+
+Key rule: **only generate a method if the corresponding `Operation` is present in
+`model.operations()`**. No method = no route. Clean and obvious.
+
+---
+
+## GraphQL Code Generation (`GraphQlWiringGenerator`)
+
+Generates one `RuntimeWiringConfigurer` implementation per entity.
+
+### Generated output example for `Product`
+
+```java
+// Generated by spring-xpose — do not edit
+package com.example.generated;
+
+@Component
+public class ProductGraphQlWiring implements RuntimeWiringConfigurer {
+
+    private final ProductRepository repository;
+
+    public ProductGraphQlWiring(ProductRepository repository) {
+        this.repository = repository;
+    }
+
+    @Override
+    public void configure(RuntimeWiring.Builder builder) {
+        // Query: findAllProducts
+        builder.type("Query", wiring -> wiring
+            .dataFetcher("findAllProducts",
+                env -> repository.findAll())
+
+            .dataFetcher("findProductById",
+                env -> repository.findById(
+                    Long.valueOf(env.getArgument("id").toString())
+                ).orElse(null))
+        );
+
+        // Mutations
+        builder.type("Mutation", wiring -> wiring
+            .dataFetcher("createProduct", env -> {
+                Map<String, Object> input = env.getArgument("input");
+                Product entity = mapToEntity(input);
+                return repository.save(entity);
+            })
+            .dataFetcher("updateProduct", env -> {
+                Map<String, Object> input = env.getArgument("input");
+                Long id = Long.valueOf(input.get("id").toString());
+                if (!repository.existsById(id)) return null;
+                Product entity = mapToEntity(input);
+                return repository.save(entity);
+            })
+            .dataFetcher("deleteProduct", env -> {
+                Long id = Long.valueOf(env.getArgument("id").toString());
+                repository.deleteById(id);
+                return true;
+            })
+        );
+    }
+
+    // Generated: maps GraphQL input map to entity fields by name
+    private Product mapToEntity(Map<String, Object> input) {
+        Product entity = new Product();
+        if (input.containsKey("name"))
+            entity.setName((String) input.get("name"));
+        if (input.containsKey("price"))
+            entity.setPrice(new BigDecimal(input.get("price").toString()));
+        // relation fields: categoryId → load Category by id and set
+        return entity;
+    }
+}
+```
+
+Also generate a `ProductGraphQlSchema.java` `@Component` that contributes the SDL
+type definitions programmatically via `GraphQlSourceBuilderCustomizer`:
+
+```java
+@Component
+public class ProductGraphQlSchema implements GraphQlSourceBuilderCustomizer {
+    @Override
+    public void customize(GraphQlSource.SchemaResourceBuilder builder) {
+        builder.schemaResources(
+            new ByteArrayResource("""
+                type Product {
+                  id: ID
+                  name: String
+                  price: Float
+                  categoryId: ID
+                }
+                input ProductInput {
+                  name: String!
+                  price: Float!
+                  categoryId: ID
+                }
+                input ProductUpdateInput {
+                  id: ID!
+                  name: String
+                  price: Float
+                  categoryId: ID
+                }
+                extend type Query {
+                  findAllProducts: [Product]
+                  findProductById(id: ID!): Product
+                }
+                extend type Mutation {
+                  createProduct(input: ProductInput!): Product
+                  updateProduct(input: ProductUpdateInput!): Product
+                  deleteProduct(id: ID!): Boolean
+                }
+            """.getBytes())
+        );
+    }
+}
+```
+
+Relation field handling in SDL:
+- `ALWAYS_IDS` / `IDS_FOR_LIST_OBJECT_FOR_SINGLE`: generate `categoryId: ID`
+- `ALWAYS_OBJECT`: generate `category: Category` (also ensure `Category` type is registered)
+
+---
+
+## Security Code Generation (`SecurityConfigurerGenerator`)
+
+Generates one `SecurityFilterChain` `@Configuration` class per entity.
+
+### Generated output example for `Product`
+
+```java
+// Generated by spring-xpose — do not edit
+package com.example.generated;
+
+@Configuration
+public class ProductSecurityConfigurer {
+
+    @Bean
+    @Order(101)   // above default (100) so it is evaluated first; user beans take lower order
+    public SecurityFilterChain productSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .securityMatcher("/api/products", "/api/products/**")
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers(HttpMethod.GET, "/api/products/**")
+                    .hasAnyRole("USER", "ADMIN")         // from readRoles
+                .requestMatchers(HttpMethod.POST, "/api/products")
+                    .hasRole("ADMIN")                    // from writeRoles
+                .requestMatchers(HttpMethod.PUT, "/api/products/**")
+                    .hasRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE, "/api/products/**")
+                    .hasRole("ADMIN")
+            )
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+        return http.build();
+    }
+}
+```
+
+Generation rules:
+- `authType = NONE` → generate `.anyRequest().permitAll()`, no auth mechanism configured
+- `authType = BASIC` → add `.httpBasic(Customizer.withDefaults())`
+- `authType = OAUTH2` → add `.oauth2ResourceServer(oauth2 -> oauth2.jwt(...))`
+- `roles` non-empty and `readRoles`/`writeRoles` empty → apply to all methods
+- `readRoles` non-empty → use for GET; `writeRoles` non-empty → use for POST/PUT/DELETE
+- Empty roles array with non-NONE authType → `.authenticated()` (auth required, no role check)
+- Each entity gets its own `@Bean` method with a unique name (`productSecurityFilterChain`,
+  `categorySecurityFilterChain`) and its own `@Order` value to avoid bean name conflicts
+
+For GraphQL mode, additionally generate a `OncePerRequestFilter` that inspects the
+request body to detect `query` vs `mutation`, maps the operation name to the entity,
+and enforces the appropriate role before passing to the GraphQL handler.
+
+---
+
+## `RelationAwareSerializer` (in `starter` module — runtime)
+
+This is the only significant runtime component that cannot be code-generated (since it
+needs to act dynamically during Jackson serialization). It lives in the `starter` module.
+
+```java
+public class RelationAwareSerializer extends JsonSerializer<Object> {
+
+    // ThreadLocal set by generated controllers before each repository call
+    public static final ThreadLocal<Mode> CONTEXT = new ThreadLocal<>();
+    public enum Mode { LIST, SINGLE }
+
+    @Override
+    public void serialize(Object value, JsonGenerator gen,
+                          SerializerProvider provider) throws IOException {
+        Mode mode = CONTEXT.get();
+        // inspect @ManyToOne / @OneToMany on the field being serialized
+        // if relation and mode == LIST → write ID scalar
+        // if relation and mode == SINGLE → delegate to default serializer (full object)
+        // if ALWAYS_IDS → always write ID
+        // if ALWAYS_OBJECT → always delegate
+    }
+}
+```
+
+Registered via `Jackson2ObjectMapperBuilderCustomizer` in `SpringXposeAutoConfiguration`.
+
+---
+
+## `SpringXposeAutoConfiguration` (in `starter` module)
+
+Kept minimal — most work is done at compile time by the processor.
 
 ```java
 @AutoConfiguration
@@ -482,82 +737,91 @@ security, never replaces it.
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class SpringXposeAutoConfiguration {
 
+    // Registers RelationAwareSerializer with Jackson
     @Bean
-    public EntityExposureRegistry entityExposureRegistry() { ... }
+    @ConditionalOnMissingBean
+    public Jackson2ObjectMapperBuilderCustomizer relationSerializerCustomizer() { ... }
 
-    @Bean
-    public EntityExposureProcessor entityExposureProcessor(
-            EntityExposureRegistry registry,
-            DynamicRepositoryFactory repoFactory) { ... }
-
-    @Bean
-    @ConditionalOnProperty(name = "spring-xpose.mode", havingValue = "REST", matchIfMissing = true)
-    @ConditionalOnClass(name = "org.springframework.web.servlet.DispatcherServlet")
-    public EntityControllerRegistrar entityRestControllers(
-            EntityExposureRegistry registry,
-            SpringXposeProperties props) { ... }
-
-    @Bean
-    @ConditionalOnProperty(name = "spring-xpose.mode", havingValue = "GRAPHQL")
-    @ConditionalOnClass(name = "org.springframework.graphql.execution.GraphQlSource")
-    public RuntimeWiringConfigurer entityGraphQlWiring(
-            EntityExposureRegistry registry) { ... }
-
-    @Bean
-    @Order(Ordered.LOWEST_PRECEDENCE - 10)
-    public SecurityFilterChain entityExposeSecurityChain(
-            HttpSecurity http,
-            EntityExposureRegistry registry,
-            SpringXposeProperties props) throws Exception { ... }
+    // Provides SpringXposeProperties so generated security configurers can read base path
+    // Everything else (controllers, wiring, security) is generated code — Spring picks it up
+    // automatically via @RestController / @Component / @Configuration on the generated classes
 }
 ```
 
-Register in:
-```
-src/main/resources/META-INF/spring/
-  org.springframework.boot.autoconfigure.AutoConfiguration.imports
-```
-Contents:
-```
-io.github.springxpose.config.SpringXposeAutoConfiguration
-```
+That's it. The autoconfiguration is intentionally thin because the generated `@RestController`,
+`@Component`, and `@Configuration` classes are picked up by Spring's normal component scan
+— no manual registration needed.
 
 ---
 
 ## Testing Requirements
 
-### Unit Tests
+### Unit Tests (in `processor` module)
+
+Test the code generator directly — compile test entity classes in-process and assert on
+the generated source.
+
+Use **Google Compile Testing** (`com.google.testing.compile:compile-testing:0.21.0`) for
+this — it lets you run the APT processor against a source string and assert on the
+generated output.
 
 | Test class | What it verifies |
 |---|---|
-| `EntityExposureProcessorTest` | Metadata built correctly for all annotation config combos; path derivation; `idClass` resolution; `EntityExposeConfigurationException` thrown when `@Id` missing |
-| `EntityControllerRegistrarTest` | Correct request mappings registered; omitted operations produce no mapping |
-| `SchemaGeneratorTest` | Correct SDL produced for entity with/without relations; input types correct; mutations absent when operation excluded |
-| `RelationAwareSerializerTest` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE`: IDs on LIST context, object on SINGLE; `ALWAYS_IDS`; `ALWAYS_OBJECT` |
-| `OperationRoleResolverTest` | `effectiveReadRoles` / `effectiveWriteRoles` logic with all combos of `roles` / `readRoles` / `writeRoles` |
-| `EntityNameUtilsTest` | Pluralization edge cases: `Category→categories`, `Person→people`, `Status→statuses`, `Company→companies` |
+| `RestControllerGeneratorTest` | Generated controller has correct class name, path, methods; omitted operations produce no method; correct HTTP status codes |
+| `GraphQlWiringGeneratorTest` | Generated wiring registers correct queries/mutations; omitted operations absent; correct field names |
+| `SecurityConfigurerGeneratorTest` | `authType=NONE` → `permitAll()`; `OAUTH2` → jwt config present; role rules generated correctly; `readRoles` / `writeRoles` split correct |
+| `EntityModelParserTest` | `@Id` missing → compile error emitted; path derived correctly; relation fields detected |
+| `EntityNameUtilsTest` | `Category→categories`, `Person→people`, `Status→statuses`, `Company→companies` |
 
-### Integration Tests (all use `@SpringBootTest` + `MockMvc` + H2)
-
-| Test class | What it verifies |
-|---|---|
-| `RestCrudIntegrationTest` | Full CRUD lifecycle: POST → GET all → GET by id → PUT → DELETE, correct status codes |
-| `RestRelationSerializationTest` | GET all returns IDs for relations; GET by id returns full nested object |
-| `RestPartialExposeTest` | Entity with `expose={FIND_ALL, FIND_BY_ID}` — POST/PUT/DELETE return 404/405 |
-| `RestNotFoundTest` | GET by unknown id returns 404; PUT unknown id returns 404 |
-| `GraphQLQueryIntegrationTest` | `findAll` + `findById` queries return correct data and correct field shapes |
-| `GraphQLMutationIntegrationTest` | `create`, `update`, `delete` mutations work end-to-end |
-| `GraphQLRelationTest` | List query returns IDs; single query returns full nested object |
-| `SecurityOAuth2IntegrationTest` | No token → 401; invalid token → 401; wrong role → 403; correct role + token → 200 |
-| `SecurityBasicAuthIntegrationTest` | No credentials → 401; wrong role → 403; correct credentials + role → 200 |
-| `SecurityPermitAllIntegrationTest` | `AuthType.NONE` entity: no credentials needed, all ops accessible |
-| `SecurityReadWriteRoleTest` | `readRoles` user: GET succeeds, POST returns 403; `writeRoles` user: POST succeeds, GET returns 403 |
-| `ModeExclusivityTest` | With `mode=REST`, `/graphql` returns 404; with `mode=GRAPHQL`, REST entity paths not registered |
-
-### Test Utilities (in `starter/src/test/`)
+Example using Compile Testing:
 
 ```java
-// Composed annotation — use on all integration tests
+@Test
+void generatesGetMappingForFindAll() {
+    Compilation compilation = Compiler.javac()
+        .withProcessors(new ExposeEntityProcessor())
+        .compile(JavaFileObjects.forSourceString(
+            "com.example.Product",
+            """
+            package com.example;
+            @jakarta.persistence.Entity
+            @io.github.springxpose.annotation.ExposeEntity(path = "products")
+            public class Product {
+                @jakarta.persistence.Id
+                private Long id;
+                private String name;
+                // getters/setters
+            }
+            """));
+
+    assertThat(compilation).succeeded();
+    assertThat(compilation)
+        .generatedSourceFile("com.example.generated.ProductController")
+        .contentsAsUtf8String()
+        .contains("@GetMapping")
+        .contains("/api/products");
+}
+```
+
+### Integration Tests (in `sample` module — `@SpringBootTest` + `MockMvc` + H2)
+
+| Test class | What it verifies |
+|---|---|
+| `RestCrudIntegrationTest` | Full CRUD lifecycle: POST → GET all → GET by id → PUT → DELETE |
+| `RestRelationSerializationTest` | GET all returns IDs for relations; GET by id returns full object |
+| `RestPartialExposeTest` | Entity with `expose={FIND_ALL, FIND_BY_ID}` — POST/PUT/DELETE return 404/405 |
+| `RestNotFoundTest` | GET /products/99999 → 404; PUT /products/99999 → 404 |
+| `GraphQLQueryIntegrationTest` | `findAll` + `findById` return correct data and field shapes |
+| `GraphQLMutationIntegrationTest` | `create`, `update`, `delete` mutations work end-to-end |
+| `SecurityOAuth2IntegrationTest` | No token → 401; invalid token → 401; wrong role → 403; correct role → 200 |
+| `SecurityBasicAuthIntegrationTest` | No credentials → 401; wrong role → 403; correct role → 200 |
+| `SecurityPermitAllIntegrationTest` | `AuthType.NONE` entity: no credentials needed, all ops work |
+| `SecurityReadWriteRoleTest` | `readRoles` user: GET → 200, POST → 403; `writeRoles` user: POST → 200, GET → 403 |
+
+### Test Utilities
+
+```java
+// Composed annotation for all integration tests
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 @AutoConfigureMockMvc
 @TestPropertySource(properties = {
@@ -570,15 +834,6 @@ public @interface SpringXposeTest {}
 public class MockJwtFactory {
     public static String forRoles(String... roles) { ... }
     public static String expired() { ... }
-    public static String withoutRoles() { ... }
-}
-
-// Fluent builder for creating test entities in H2
-public class TestEntityBuilder<T> {
-    public static <T> TestEntityBuilder<T> of(Class<T> type) { ... }
-    public TestEntityBuilder<T> field(String name, Object value) { ... }
-    public T build() { ... }        // instantiates + sets fields via reflection
-    public T persist(JpaRepository<T, ?> repo) { ... }
 }
 ```
 
@@ -593,7 +848,6 @@ public class TestEntityBuilder<T> {
 @ExposeEntity(
     path = "products",
     expose = {Operation.FIND_ALL, Operation.FIND_BY_ID, Operation.CREATE, Operation.UPDATE},
-    // DELETE intentionally excluded
     authType = AuthType.OAUTH2,
     readRoles  = {"ROLE_USER", "ROLE_ADMIN"},
     writeRoles = {"ROLE_ADMIN"},
@@ -617,7 +871,7 @@ public class Product {
 @ExposeEntity(
     path = "categories",
     authType = AuthType.BASIC,
-    roles = {"ROLE_USER"},          // all ops require ROLE_USER
+    roles = {"ROLE_USER"},
     relationMode = RelationMode.ALWAYS_OBJECT
 )
 public class Category {
@@ -630,10 +884,19 @@ public class Category {
 }
 ```
 
-### `DataLoader.java`
+### What the processor generates for these two entities
 
-A `CommandLineRunner` that inserts 2 categories and 5 products on startup so the sample
-works out of the box with no manual setup.
+```
+sample/build/generated/sources/annotationProcessor/java/main/
+  com/example/generated/
+    ProductController.java          ← @RestController with 4 methods (no DELETE)
+    ProductSecurityConfigurer.java  ← SecurityFilterChain with OAuth2 + role split
+    CategoryController.java         ← @RestController with all 5 methods
+    CategorySecurityConfigurer.java ← SecurityFilterChain with Basic Auth + ROLE_USER
+```
+
+These files are fully visible in the IDE, navigable with Cmd+Click, and show up in
+stack traces by their real class names.
 
 ### `application.properties` (sample)
 
@@ -645,114 +908,43 @@ spring.datasource.url=jdbc:h2:mem:sampledb
 spring.h2.console.enabled=true
 spring.jpa.show-sql=true
 
-# OAuth2 — point at a local Spring Authorization Server or Keycloak
 spring.security.oauth2.resourceserver.jwt.issuer-uri=http://localhost:9000
-
-# Basic auth user for Category endpoints
 spring.security.user.name=admin
 spring.security.user.password=secret
 spring.security.user.roles=USER
 ```
 
-### README `curl` examples (required in `README.md`)
+### `curl` examples (required in README.md)
 
 ```bash
-# List all products (OAuth2 Bearer token required, ROLE_USER)
-curl -H "Authorization: Bearer $TOKEN" \
-     http://localhost:8080/api/products
+# List all products (OAuth2, ROLE_USER)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/products
 
 # Get single product (full category object returned)
-curl -H "Authorization: Bearer $TOKEN" \
-     http://localhost:8080/api/products/1
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/products/1
 
-# Create a product (ROLE_ADMIN required)
+# Create product (OAuth2, ROLE_ADMIN)
 curl -X POST \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -d '{"name":"Widget","price":9.99,"category":{"id":1}}' \
      http://localhost:8080/api/products
 
-# Update a product
+# Update product
 curl -X PUT \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $ADMIN_TOKEN" \
      -d '{"name":"Updated Widget","price":12.99,"category":{"id":1}}' \
      http://localhost:8080/api/products/1
 
-# List all categories (Basic Auth, ROLE_USER)
-curl -u admin:secret \
-     http://localhost:8080/api/categories
+# List categories (Basic Auth)
+curl -u admin:secret http://localhost:8080/api/categories
 
-# GraphQL — list products (switch spring-xpose.mode=GRAPHQL)
+# GraphQL query (set spring-xpose.mode=GRAPHQL)
 curl -X POST \
      -H "Content-Type: application/json" \
      -d '{"query":"{ findAllProducts { id name price categoryId } }"}' \
      http://localhost:8080/graphql
-
-# GraphQL — create product mutation
-curl -X POST \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer $ADMIN_TOKEN" \
-     -d '{"query":"mutation { createProduct(input: {name:\"Gadget\", price:19.99, categoryId:1}) { id name } }"}' \
-     http://localhost:8080/graphql
-```
-
----
-
-## Build Pipeline
-
-### Parent `pom.xml`
-
-```xml
-<groupId>io.github.spring-xpose</groupId>
-<artifactId>spring-xpose-parent</artifactId>
-<version>0.1.0-SNAPSHOT</version>
-<packaging>pom</packaging>
-
-<modules>
-  <module>starter</module>
-  <module>sample</module>
-</modules>
-
-<properties>
-  <java.version>21</java.version>
-  <maven.compiler.release>21</maven.compiler.release>
-  <spring-boot.version>3.3.4</spring-boot.version>
-</properties>
-```
-
-### Starter `pom.xml` — Key Dependencies
-
-```xml
-<!-- Core -->
-<dependency>spring-boot-starter-web</dependency>           <!-- Spring MVC -->
-<dependency>spring-boot-starter-data-jpa</dependency>
-<dependency>spring-boot-starter-security</dependency>
-<dependency>spring-boot-starter-oauth2-resource-server</dependency>
-<dependency>spring-graphql</dependency>                    <!-- optional, conditional -->
-<dependency>graphql-java</dependency>                      <!-- optional, conditional -->
-
-<!-- Utilities -->
-<dependency>lombok</dependency>
-<dependency>spring-boot-autoconfigure-processor</dependency>
-<dependency>spring-boot-configuration-processor</dependency>
-
-<!-- Test -->
-<dependency scope="test">spring-boot-starter-test</dependency>
-<dependency scope="test">h2</dependency>
-<dependency scope="test">spring-security-test</dependency>
-```
-
-Note: `spring-graphql` and `graphql-java` should be declared as `optional` so they are
-not pulled into user projects that only want REST mode.
-
-### Maven Plugins (for Maven Central publish)
-
-```xml
-<plugin>maven-source-plugin</plugin>        <!-- attach sources jar -->
-<plugin>maven-javadoc-plugin</plugin>       <!-- attach javadoc jar -->
-<plugin>maven-gpg-plugin</plugin>           <!-- sign with ${gpg.passphrase} -->
-<plugin>nexus-staging-maven-plugin</plugin> <!-- publish via Sonatype OSSRH -->
 ```
 
 ---
@@ -761,7 +953,7 @@ not pulled into user projects that only want REST mode.
 
 ### `.github/workflows/ci.yml`
 
-Triggers: push and pull_request on all branches.
+Triggers: push + pull_request on all branches.
 
 ```yaml
 name: CI
@@ -772,52 +964,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with: { java-version: '21', distribution: 'temurin' }
+        with:
+          java-version: '21'
+          distribution: 'temurin'
       - uses: actions/cache@v4
         with:
-          path: ~/.m2
-          key: "${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}"
-      - run: mvn --batch-mode verify
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: "${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle') }}"
+      - run: ./gradlew check
 ```
 
 ### `.github/workflows/release.yml`
 
-Triggers: push of a `v*` tag (e.g. `v0.1.0`).
+Triggers: push of a `v*` tag.
 
 ```yaml
-name: Release
+name: Publish to GitHub Packages
 on:
   push:
     tags: ['v*']
 jobs:
-  release:
+  publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with: { java-version: '21', distribution: 'temurin', server-id: ossrh }
-      - name: Import GPG key
-        run: echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
-      - name: Write Maven settings
-        run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml << EOF
-          <settings>
-            <servers>
-              <server>
-                <id>ossrh</id>
-                <username>${{ secrets.OSSRH_USERNAME }}</username>
-                <password>${{ secrets.OSSRH_PASSWORD }}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-      - run: mvn --batch-mode -Prelease release:prepare release:perform
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - name: Publish annotations, processor, starter
+        run: ./gradlew :annotations:publish :processor:publish :starter:publish
         env:
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
       - name: Create GitHub Release
         run: gh release create ${{ github.ref_name }} --generate-notes
-        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ### `.github/workflows/sample-build.yml`
@@ -835,60 +1023,62 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with: { java-version: '21', distribution: 'temurin' }
-      - run: mvn --batch-mode package -pl sample -am -DskipTests
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - run: ./gradlew :sample:build
 ```
 
-### Required Repository Secrets
+### Required Secrets
 
 | Secret | Purpose |
 |---|---|
-| `OSSRH_USERNAME` | Sonatype OSSRH username |
-| `OSSRH_PASSWORD` | Sonatype OSSRH password |
-| `GPG_PRIVATE_KEY` | Armored GPG private key for artifact signing |
-| `GPG_PASSPHRASE` | Passphrase for the GPG key |
-| `GITHUB_TOKEN` | Automatic — used for GitHub Release creation |
+| `GITHUB_TOKEN` | Automatic — publish to GitHub Packages + create release |
+
+No GPG signing or OSSRH credentials needed for GitHub Packages.
 
 ---
 
 ## Constraints & Rules
 
-1. **Standard Spring MVC only.** No WebFlux, no `Mono`, no `Flux`, no `RouterFunction`.
-   All controllers return plain `ResponseEntity<T>` or `List<T>`.
-2. **No `.graphqls` schema files required from the user.** All GraphQL schema is built
-   at runtime via reflection.
-3. **Never replace user's security config.** Use `@Order(Ordered.LOWEST_PRECEDENCE - 10)`
-   on the generated `SecurityFilterChain`.
-4. **Java 21 features encouraged:** records for `EntityExposureMetadata`, sealed
-   interfaces where appropriate, pattern matching in switch expressions.
-5. **No APT or compile-time code generation.** All controller and schema wiring happens
-   at runtime via reflection and Spring's `BeanDefinitionRegistry`.
-6. **`@ConditionalOnMissingBean`** on all library-provided beans so users can override
-   any component (repository, serializer, security chain, DataFetcher, etc.).
-7. **Graceful startup failure:** if an entity's `@Id` field cannot be resolved, throw
-   `EntityExposeConfigurationException` with the entity class name and a clear message
-   — never a `NullPointerException` at runtime.
-8. **Thread safety:** `EntityExposureRegistry` is write-once at startup and read-only
-   thereafter. Use an immutable map internally (e.g. `Map.copyOf(...)`).
-9. **No `@SuppressWarnings("unchecked")`** without an inline comment explaining why it
-   is safe.
-10. **`graphql-java` and `spring-graphql` are optional dependencies.** The starter must
-    boot and function correctly in REST mode even when these JARs are absent from the
-    classpath.
+1. **All controller, wiring, and security code is generated at compile time.** No runtime
+   reflection to register controllers or security chains. The only runtime component
+   is `RelationAwareSerializer` in the `starter` module.
+2. **`@RetentionPolicy.SOURCE` on `@ExposeEntity`** — it is consumed by the processor and
+   does not need to be present at runtime.
+3. **Compile errors, not runtime exceptions.** Use `processingEnv.getMessager()` with
+   `Diagnostic.Kind.ERROR` for all configuration mistakes (missing `@Id`, invalid path
+   characters, etc.).
+4. **Generated files are in `build/` — never committed to source control.** Add
+   `build/` to `.gitignore`. The sample README must explain that generated files appear
+   in `build/generated/sources/annotationProcessor/` and how to view them in IntelliJ
+   and VS Code.
+5. **Java 21 features in the processor:** use records for `EntityModel` and `FieldModel`,
+   pattern matching in switches when inspecting element kinds.
+6. **`@ConditionalOnMissingBean`** on all `starter` beans so users can override
+   `RelationAwareSerializer` or any autoconfiguration component.
+7. **`spring-graphql` and `graphql-java` are `compileOnly` in `starter`** — the starter
+   must boot and function correctly in REST mode without them on the classpath.
+8. **No `@SuppressWarnings("unchecked")`** without an inline comment explaining safety.
+9. **Generated class names must not conflict** — always suffix with `Controller`,
+   `GraphQlWiring`, `GraphQlSchema`, `SecurityConfigurer`. Place in a `.generated`
+   subpackage of the entity's package.
+10. **Thread safety of `SerializationContext`:** always use try/finally in generated
+    controllers to ensure `SerializationContext.clear()` is called even on exceptions.
 
 ---
 
 ## Deliverables Checklist
 
-- [ ] `starter/` module compiles and all unit tests pass (`mvn test -pl starter`)
-- [ ] `sample/` boots cleanly, `DataLoader` inserts test data, all endpoints accessible
-      with correct credentials
-- [ ] All integration tests pass against H2 (`mvn verify`)
-- [ ] `mvn package` produces a jar containing the correct
-      `META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`
-- [ ] REST mode works with `spring-graphql` absent from classpath
-- [ ] GraphQL mode works with correct schema auto-generated — no `.graphqls` files needed
-- [ ] `README.md` contains: quick-start guide, full annotation reference table, auth
-      configuration guide (OAuth2 + Basic), `curl` examples, Mermaid architecture
-      diagram, Maven Central badge, secrets setup table
-- [ ] All three GitHub Actions workflows are present and syntactically valid YAML
+- [ ] `./gradlew check` passes — all unit + integration tests green
+- [ ] `./gradlew :sample:build` produces a runnable jar
+- [ ] Sample boots, `DataLoader` inserts data, all endpoints work with correct auth
+- [ ] Generated files visible in `build/generated/sources/annotationProcessor/`
+- [ ] REST mode works without `spring-graphql` on the classpath
+- [ ] GraphQL mode produces correct schema with no `.graphqls` files
+- [ ] `./gradlew :annotations:publish :processor:publish :starter:publish` publishes to
+  GitHub Packages (requires `GITHUB_TOKEN`)
+- [ ] All three GitHub Actions workflows are present and valid YAML
+- [ ] `README.md` includes: quick-start, annotation reference table, auth guide,
+  `curl` examples, Mermaid architecture diagram, how-to view generated files in IDE,
+  GitHub Packages install instructions

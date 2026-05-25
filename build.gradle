@@ -1,28 +1,28 @@
-plugins {
-	id 'java'
-	id 'org.springframework.boot' version '4.0.6'
-	id 'io.spring.dependency-management' version '1.1.7'
+allprojects {
+    group = 'io.github.spring-xpose'
+    version = '0.1.0-SNAPSHOT'
 }
 
-group = 'com.spring.xpose'
-version = '0.0.1-SNAPSHOT'
+subprojects {
+    apply plugin: 'java'
 
-java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(21)
-	}
-}
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+        withSourcesJar()
+        withJavadocJar()
+    }
 
-repositories {
-	mavenCentral()
-}
+    repositories {
+        mavenCentral()
+    }
 
-dependencies {
-	implementation 'org.springframework.boot:spring-boot-starter'
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-tasks.named('test') {
-	useJUnitPlatform()
+    test {
+        useJUnitPlatform()
+        testLogging {
+            showStandardStreams = true
+            events "passed", "skipped", "failed"
+        }
+    }
 }

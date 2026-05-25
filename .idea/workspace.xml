@@ -5,44 +5,52 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="cf9a4afb-f748-47d6-96a1-8eb291d9ee11" name="Changes" comment="Init">
-      <change afterPath="$PROJECT_DIR$/.github/workflows/ci.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/publish.yml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.github/workflows/release.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.github/workflows/sample-build.yml" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/repository/DynamicRepositoryFactory.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/annotations/build.gradle" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/annotations/src/main/java/io/github/springxpose/annotation/AuthType.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/annotations/src/main/java/io/github/springxpose/annotation/ExposeEntity.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/annotations/src/main/java/io/github/springxpose/annotation/Operation.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/annotations/src/main/java/io/github/springxpose/annotation/RelationMode.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/build.gradle" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/ExposeEntityProcessor.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/generator/GraphQlWiringGenerator.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/generator/RepositoryGenerator.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/generator/RestControllerGenerator.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/generator/SecurityConfigurerGenerator.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/model/EntityModel.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/model/FieldModel.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/model/RelationFieldModel.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/main/java/io/github/springxpose/processor/util/EntityNameUtils.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/test/java/io/github/springxpose/processor/ExposeEntityProcessorTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/test/java/io/github/springxpose/processor/RestControllerGeneratorTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/test/java/io/github/springxpose/processor/SecurityConfigurerGeneratorTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/processor/src/test/java/io/github/springxpose/processor/util/EntityNameUtilsTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/build.gradle" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/main/java/io/github/springxpose/sample/DataLoader.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/main/java/io/github/springxpose/sample/SampleApplication.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/main/java/io/github/springxpose/sample/entity/Category.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/main/java/io/github/springxpose/sample/entity/Product.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/main/resources/application.properties" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/test/java/io/github/springxpose/sample/ProductControllerIntegrationTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/test/java/io/github/springxpose/sample/RestCrudIntegrationTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/test/java/io/github/springxpose/sample/RestNotFoundTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/test/java/io/github/springxpose/sample/SecurityPermitAllIntegrationTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/sample/src/test/java/io/github/springxpose/sample/SpringXposeTest.java" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/starter/build.gradle" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/AuthType.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/ExposeEntity.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/Operation.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/RelationMode.java" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/config/SpringXposeAutoConfiguration.java" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/config/SpringXposeProperties.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/exception/EntityExposeConfigurationException.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/graphql/DataFetcherFactory.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/graphql/SchemaGenerator.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/model/EntityExposureMetadata.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/processor/EntityExposureProcessor.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/registry/EntityExposureRegistry.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/repository/DynamicRepositoryFactory.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/EntityControllerHandler.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/EntityControllerRegistrar.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/RelationAwareSerializer.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/RelationAwareSerializerModifier.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/SerializationContext.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/security/OperationRoleResolver.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/security/SecurityConfigurerFactory.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/util/EntityNameUtils.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/serializer/RelationAwareSerializer.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/serializer/SerializationContext.java" afterDir="false" />
       <change afterPath="$PROJECT_DIR$/starter/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/integration/EntityRestIntegrationTest.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/integration/TestApplication.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/integration/TestProduct.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/EntityExposureMetadataTest.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/EntityExposureRegistryTest.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/EntityNameUtilsTest.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/OperationRoleResolverTest.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/SerializationContextTest.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/starter/src/test/resources/application-test.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/ci.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/ci.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/publish.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/publish.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/release.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/release.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" beforeDir="false" afterPath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/prompt.md" beforeDir="false" afterPath="$PROJECT_DIR$/prompt.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/settings.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/settings.gradle" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -166,7 +174,15 @@
       <option name="project" value="LOCAL" />
       <updated>1779699383258</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="Init">
+      <option name="closed" value="true" />
+      <created>1779701444039</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1779701444040</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
