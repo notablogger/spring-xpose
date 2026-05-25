@@ -41,6 +41,9 @@ public class SecurityConfigurerGenerator {
         // securityMatcher
         method.addStatement("http.securityMatcher($S, $S)", basePath, basePath + "/**");
 
+        // disable CSRF — REST APIs don't use cookie-based sessions
+        method.addStatement("http.csrf(csrf -> csrf.disable())");
+
         // authorizeHttpRequests
         buildAuthStatements(method, model, basePath, httpMethod);
 
