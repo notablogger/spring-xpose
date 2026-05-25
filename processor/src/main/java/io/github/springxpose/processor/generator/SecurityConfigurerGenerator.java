@@ -90,45 +90,37 @@ public class SecurityConfigurerGenerator {
                           : hasRoles      ? formatRoles(model.roles().toArray(new String[0]))
                           : null;
 
+        // Build a single authorizeHttpRequests block with all rules
+        StringBuilder auth = new StringBuilder("http.authorizeHttpRequests(auth -> auth");
+
         if (readRoles != null) {
-            final String roles = readRoles;
-            method.addStatement(
-                "http.authorizeHttpRequests(auth -> auth"
-                + "\n    .requestMatchers($T.GET, $S).hasAnyRole(" + roles + ")"
-                + "\n    .requestMatchers($T.GET, $S).hasAnyRole(" + roles + ")"
-                + "\n    .anyRequest().authenticated())",
-                httpMethod, basePath, httpMethod, basePath + "/**");
+            auth.append("\n    .requestMatchers($T.GET, $S).hasAnyRole(").append(readRoles).append(")")
+                .append("\n    .requestMatchers($T.GET, $S).hasAnyRole(").append(readRoles).append(")");
         } else {
-            method.addStatement(
-                "http.authorizeHttpRequests(auth -> auth"
-                + "\n    .requestMatchers($T.GET, $S).authenticated()"
-                + "\n    .requestMatchers($T.GET, $S).authenticated()"
-                + "\n    .anyRequest().authenticated())",
-                httpMethod, basePath, httpMethod, basePath + "/**");
+            auth.append("\n    .requestMatchers($T.GET, $S).authenticated()")
+                .append("\n    .requestMatchers($T.GET, $S).authenticated()");
         }
 
         if (writeRoles != null) {
-            final String roles = writeRoles;
-            method.addStatement(
-                "http.authorizeHttpRequests(auth -> auth"
-                + "\n    .requestMatchers($T.POST,   $S).hasAnyRole(" + roles + ")"
-                + "\n    .requestMatchers($T.PUT,    $S).hasAnyRole(" + roles + ")"
-                + "\n    .requestMatchers($T.DELETE, $S).hasAnyRole(" + roles + ")"
-                + "\n    .anyRequest().denyAll())",
-                httpMethod, basePath,
-                httpMethod, basePath + "/**",
-                httpMethod, basePath + "/**");
+            auth.append("\n    .requestMatchers($T.POST,   $S).hasAnyRole(").append(writeRoles).append(")")
+                .append("\n    .requestMatchers($T.PUT,    $S).hasAnyRole(").append(writeRoles).append(")")
+                .append("\n    .requestMatchers($T.DELETE, $S).hasAnyRole(").append(writeRoles).append(")");
         } else {
-            method.addStatement(
-                "http.authorizeHttpRequests(auth -> auth"
-                + "\n    .requestMatchers($T.POST,   $S).authenticated()"
-                + "\n    .requestMatchers($T.PUT,    $S).authenticated()"
-                + "\n    .requestMatchers($T.DELETE, $S).authenticated()"
-                + "\n    .anyRequest().denyAll())",
-                httpMethod, basePath,
-                httpMethod, basePath + "/**",
-                httpMethod, basePath + "/**");
+            auth.append("\n    .requestMatchers($T.POST,   $S).authenticated()")
+                .append("\n    .requestMatchers($T.PUT,    $S).authenticated()")
+                .append("\n    .requestMatchers($T.DELETE, $S).authenticated()");
         }
+
+        auth.append("\n    .anyRequest().denyAll())");
+
+        method.addStatement(auth.toString(),
+            // GET basePath, GET basePath/**
+            httpMethod, basePath,
+            httpMethod, basePath + "/**",
+            // POST basePath, PUT basePath/**, DELETE basePath/**
+            httpMethod, basePath,
+            httpMethod, basePath + "/**",
+            httpMethod, basePath + "/**");
     }
 
     private static String formatRoles(String[] roles) {
