@@ -2,6 +2,11 @@ name: Publish to GitHub Packages
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 0.1.0)'
+        required: true
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -17,12 +22,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
       - name: Publish annotations, processor, starter
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          VERSION=${{ github.event.inputs.version || '' }}
+          if [ -z "$VERSION" ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          fi
           ./gradlew :annotations:publish :processor:publish :starter:publish -Pversion=$VERSION
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         run: gh release create ${{ github.ref_name }} --generate-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
