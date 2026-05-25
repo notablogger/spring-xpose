@@ -67,7 +67,7 @@ publishing {
 }
 
 nmcp {
-    publishAllPublicationsToCentralPortal {
+    centralPortal {
         username = System.getenv('MAVEN_USERNAME')
         password = System.getenv('MAVEN_PASSWORD')
         publishingType = 'AUTOMATIC'
