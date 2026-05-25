@@ -4,8 +4,6 @@ plugins {
     id 'signing'
 }
 
-apply plugin: 'com.gradleup.nmcp'
-
 dependencies {
     // no dependencies — annotation definitions only
 }
@@ -42,13 +40,11 @@ publishing {
             }
         }
     }
-}
-
-nmcp {
-    publishAllPublicationsToCentralPortal {
-        username = System.getenv('MAVEN_USERNAME')
-        password = System.getenv('MAVEN_PASSWORD')
-        publishingType = 'AUTOMATIC'
+    repositories {
+        maven {
+            name = 'staging'
+            url = layout.buildDirectory.dir('staging-deploy')
+        }
     }
 }
 

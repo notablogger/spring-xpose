@@ -29,23 +29,34 @@ jobs:
             echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build all modules
-        run: ./gradlew :annotations:build :processor:build :starter:build -Pversion=${{ steps.version.outputs.value }} -x javadoc
-
-      - name: Publish to Maven Central
-        run: ./gradlew :annotations:publishAllPublicationsToCentralPortal :processor:publishAllPublicationsToCentralPortal :starter:publishAllPublicationsToCentralPortal -Pversion=${{ steps.version.outputs.value }}
+      - name: Build and publish to staging
+        run: ./gradlew :annotations:publishMavenJavaPublicationToStagingRepository :processor:publishMavenJavaPublicationToStagingRepository :starter:publishMavenJavaPublicationToStagingRepository -Pversion=${{ steps.version.outputs.value }} -x javadoc
         env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Bundle staging into zip
+        run: |
+          mkdir -p bundle
+          cd annotations/build/staging-deploy && zip -r ../../../bundle/annotations.zip . && cd -
+          cd processor/build/staging-deploy  && zip -r ../../../bundle/processor.zip  . && cd -
+          cd starter/build/staging-deploy    && zip -r ../../../bundle/starter.zip    . && cd -
+          cd bundle && zip -r ../central-bundle.zip . && cd -
+
+      - name: Upload bundle to Maven Central Portal
+        run: |
+          RESPONSE=$(curl --silent --show-error --fail \
+            -u "${{ secrets.MAVEN_USERNAME }}:${{ secrets.MAVEN_PASSWORD }}" \
+            -F "bundle=@central-bundle.zip" \
+            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC")
+          echo "Response: $RESPONSE"
 
       - name: Collect release artifacts
         run: |
           mkdir -p release-artifacts
           cp annotations/build/libs/annotations-${{ steps.version.outputs.value }}.jar release-artifacts/spring-xpose-annotations-${{ steps.version.outputs.value }}.jar
-          cp processor/build/libs/processor-${{ steps.version.outputs.value }}.jar release-artifacts/spring-xpose-processor-${{ steps.version.outputs.value }}.jar
-          cp starter/build/libs/starter-${{ steps.version.outputs.value }}.jar release-artifacts/spring-xpose-starter-${{ steps.version.outputs.value }}.jar
+          cp processor/build/libs/processor-${{ steps.version.outputs.value }}.jar   release-artifacts/spring-xpose-processor-${{ steps.version.outputs.value }}.jar
+          cp starter/build/libs/starter-${{ steps.version.outputs.value }}.jar       release-artifacts/spring-xpose-starter-${{ steps.version.outputs.value }}.jar
 
       - name: Create GitHub Release with assets
         uses: softprops/action-gh-release@v2
@@ -56,3 +67,4 @@ jobs:
           files: release-artifacts/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
