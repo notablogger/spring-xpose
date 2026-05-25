@@ -20,18 +20,36 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
-      - name: Publish annotations, processor, starter
+
+      - name: Resolve version
+        id: version
         run: |
-          VERSION=${{ github.event.inputs.version || '' }}
-          if [ -z "$VERSION" ]; then
-            VERSION=${GITHUB_REF_NAME#v}
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "value=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
           fi
-          ./gradlew :annotations:publish :processor:publish :starter:publish -Pversion=$VERSION
+
+      - name: Build all modules
+        run: ./gradlew :annotations:build :processor:build :starter:build -Pversion=${{ steps.version.outputs.value }} -x javadoc
+
+      - name: Publish to GitHub Packages
+        run: ./gradlew :annotations:publish :processor:publish :starter:publish -Pversion=${{ steps.version.outputs.value }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: gh release create ${{ github.ref_name }} --generate-notes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp annotations/build/libs/annotations-${{ steps.version.outputs.value }}.jar release-artifacts/spring-xpose-annotations-${{ steps.version.outputs.value }}.jar
+          cp processor/build/libs/processor-${{ steps.version.outputs.value }}.jar release-artifacts/spring-xpose-processor-${{ steps.version.outputs.value }}.jar
+          cp starter/build/libs/starter-${{ steps.version.outputs.value }}.jar release-artifacts/spring-xpose-starter-${{ steps.version.outputs.value }}.jar
+
+      - name: Create GitHub Release with assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.version.outputs.value) }}
+          name: v${{ steps.version.outputs.value }}
+          generate_release_notes: true
+          files: release-artifacts/*.jar
