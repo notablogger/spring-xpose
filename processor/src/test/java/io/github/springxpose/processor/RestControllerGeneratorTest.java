@@ -104,4 +104,84 @@ class RestControllerGeneratorTest {
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("/api/library-books");
     }
+
+    @Test
+    void generatesPutMappingForUpdate() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
+            .contentsAsUtf8String().contains("@PutMapping");
+    }
+
+    @Test
+    void generatesDeleteMappingForDelete() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
+            .contentsAsUtf8String().contains("@DeleteMapping");
+    }
+
+    @Test
+    void generatesGetMappingByIdForFindById() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
+            .contentsAsUtf8String().contains("/{id}");
+    }
+
+    @Test
+    void omittedOperationsAreAbsentFromOutput() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith(
+                "@ExposeEntity(path=\"books\", expose={Operation.FIND_ALL, Operation.FIND_BY_ID})"),
+                REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow(() -> new AssertionError("BookController not generated"))
+            .getCharContent(false).toString();
+
+        org.junit.jupiter.api.Assertions.assertFalse(src.contains("@PostMapping"),
+            "CREATE was not requested but @PostMapping found");
+        org.junit.jupiter.api.Assertions.assertFalse(src.contains("@PutMapping"),
+            "UPDATE was not requested but @PutMapping found");
+        org.junit.jupiter.api.Assertions.assertFalse(src.contains("@DeleteMapping"),
+            "DELETE was not requested but @DeleteMapping found");
+    }
+
+    @Test
+    void autoDerivesPathFromEntityName() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity()"), REPO);
+
+        assertThat(c).succeeded();
+        // Entity "Book" → pluralised to "books"
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
+            .contentsAsUtf8String().contains("/api/books");
+    }
+
+    @Test
+    void requestBodyHasValidAnnotation() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
+            .contentsAsUtf8String().contains("@Valid");
+    }
+
+    @Test
+    void repositoryGeneratedInGeneratedPackage() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookRepository");
+    }
 }

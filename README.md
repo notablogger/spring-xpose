@@ -1,6 +1,6 @@
 # spring-xpose-boot-starter
 
-A Spring Boot auto-configuration library that generates REST (and GraphQL) controllers, security configurations, and relation-aware serializers at **compile time** from a single `@ExposeEntity` annotation.
+A Spring Boot library that generates **REST controllers**, **security configurations**, and **relation-aware serializers** at **compile time** from a single `@ExposeEntity` annotation.
 
 ## Modules
 
@@ -9,7 +9,6 @@ A Spring Boot auto-configuration library that generates REST (and GraphQL) contr
 | `annotations` | `spring-xpose-annotations` | `@ExposeEntity` and supporting enums |
 | `processor` | `spring-xpose-processor` | Compile-time annotation processor (JavaPoet-based code generation) |
 | `starter` | `spring-xpose-starter` | Spring Boot auto-configuration, `SerializationContext`, `RelationAwareSerializer` |
-| `sample` | — | Demo Spring Boot app using H2 |
 
 ## Quick Start
 
@@ -20,6 +19,7 @@ dependencies {
     implementation 'io.github.spring-xpose:spring-xpose-starter:0.1.0-SNAPSHOT'
     annotationProcessor 'io.github.spring-xpose:spring-xpose-processor:0.1.0-SNAPSHOT'
     compileOnly 'io.github.spring-xpose:spring-xpose-annotations:0.1.0-SNAPSHOT'
+    annotationProcessor 'jakarta.persistence:jakarta.persistence-api:3.1.0'
 }
 ```
 
@@ -46,28 +46,63 @@ public class Product {
 ### 3. That's it
 
 The processor generates at compile time:
-- `ProductController` — `@RestController` at `/api/products` with the selected operations
+- `ProductRepository` — Spring Data JPA repository in `*.generated` package
+- `ProductController` — `@RestController` at `/api/products` with selected operations and OpenAPI annotations
 - `ProductSecurityConfigurer` — `@Configuration` with a `SecurityFilterChain` scoped to `/api/products/**`
 
-## `@ExposeEntity` Reference
+## Features
+
+### Operations (`expose`)
+
+| Operation | HTTP Method | Path |
+|-----------|-------------|------|
+| `FIND_ALL` | `GET` | `/api/{path}` |
+| `FIND_BY_ID` | `GET` | `/api/{path}/{id}` |
+| `CREATE` | `POST` | `/api/{path}` — returns `201 Created` |
+| `UPDATE` | `PUT` | `/api/{path}/{id}` |
+| `DELETE` | `DELETE` | `/api/{path}/{id}` |
+
+Default: all five operations. Omit any to exclude it from the generated controller.
+
+### `@ExposeEntity` Reference
 
 | Attribute | Default | Description |
 |-----------|---------|-------------|
-| `path` | entity name pluralized | REST base path segment |
+| `path` | entity name pluralised | REST base path segment (e.g. `"products"`) |
 | `expose` | all five operations | Which CRUD operations to generate |
-| `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | How relations are serialized |
+| `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | How relations are serialised |
 | `authType` | `NONE` | `NONE`, `BASIC`, or `OAUTH2` |
 | `roles` | `{}` | Roles for all operations |
 | `readRoles` | `{}` | Roles for GET operations (overrides `roles`) |
 | `writeRoles` | `{}` | Roles for POST/PUT/DELETE (overrides `roles`) |
 
-## Relation Modes
+### Auth types
+
+| `authType` | Generated security |
+|------------|-------------------|
+| `NONE` | `permitAll()` — fully public |
+| `BASIC` | HTTP Basic (`httpBasic`) with optional role-based matchers |
+| `OAUTH2` | JWT bearer token (`oauth2ResourceServer().jwt()`) with optional role-based matchers |
+
+### Relation modes
 
 | Mode | List (`GET /api/products`) | Single (`GET /api/products/1`) |
 |------|---------------------------|-------------------------------|
 | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | `"category": 3` | `"category": {"id":3,"name":"Books"}` |
 | `ALWAYS_IDS` | `"category": 3` | `"category": 3` |
-| `ALWAYS_OBJECT` | full object | full object |
+| `ALWAYS_OBJECT` | full nested object | full nested object |
+
+### OpenAPI / Swagger UI
+
+All generated controllers are annotated with `@Tag`, `@Operation`, and `@ApiResponse`. Add springdoc to get a live Swagger UI at `/swagger-ui.html`:
+
+```groovy
+implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+```
+
+### Validation
+
+`@Valid` is added to all request bodies (`CREATE`, `UPDATE`). Bean validation annotations on your entity fields are enforced automatically.
 
 ## Building
 
@@ -75,17 +110,16 @@ The processor generates at compile time:
 ./gradlew build
 ```
 
-## Running the sample
+## Running tests
 
 ```bash
-./gradlew :sample:bootRun
+./gradlew test
 ```
 
-Then visit:
-- `GET  http://localhost:8080/api/products`
-- `POST http://localhost:8080/api/products` with `{"name":"Widget","price":9.99}`
-- `GET  http://localhost:8080/api/categories`
-- `http://localhost:8080/h2-console` (H2 web console)
+## Sample projects
+
+- **REST sample** — [spring-xpose-sample-rest](https://github.com/notablogger/spring-xpose-sample-rest)
+- **GraphQL sample** — coming soon
 
 ## Publishing
 
@@ -94,4 +128,3 @@ Artifacts are published to GitHub Packages on every GitHub Release via the `publ
 ## License
 
 Apache 2.0
-
