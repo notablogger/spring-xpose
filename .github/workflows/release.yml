@@ -33,7 +33,7 @@ jobs:
         run: ./gradlew :annotations:build :processor:build :starter:build -Pversion=${{ steps.version.outputs.value }} -x javadoc
 
       - name: Publish to Maven Central
-        run: ./gradlew :annotations:publish :processor:publish :starter:publish -Pversion=${{ steps.version.outputs.value }}
+        run: ./gradlew :annotations:publishAllPublicationsToCentralPortal :processor:publishAllPublicationsToCentralPortal :starter:publishAllPublicationsToCentralPortal -Pversion=${{ steps.version.outputs.value }}
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
@@ -56,4 +56,3 @@ jobs:
           files: release-artifacts/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

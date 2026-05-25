@@ -5,6 +5,8 @@ plugins {
     id 'io.spring.dependency-management' version '1.1.4'
 }
 
+apply plugin: 'com.gradleup.nmcp'
+
 ext {
     springBootVersion = '3.3.4'
 }
@@ -83,15 +85,13 @@ publishing {
             }
         }
     }
-    repositories {
-        maven {
-            name = 'MavenCentral'
-            url = 'https://central.sonatype.com/api/v1/publisher/upload'
-            credentials {
-                username = System.getenv('MAVEN_USERNAME')
-                password = System.getenv('MAVEN_PASSWORD')
-            }
-        }
+}
+
+nmcp {
+    publishAllPublicationsToCentralPortal {
+        username = System.getenv('MAVEN_USERNAME')
+        password = System.getenv('MAVEN_PASSWORD')
+        publishingType = 'AUTOMATIC'
     }
 }
 

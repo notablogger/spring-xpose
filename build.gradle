@@ -1,3 +1,10 @@
+buildscript {
+    repositories { gradlePluginPortal() }
+    dependencies {
+        classpath 'com.gradleup.nmcp:nmcp:0.0.9'
+    }
+}
+
 allprojects {
     group = 'io.github.notablogger'
     version = project.findProperty('version') ?: '0.1.0-SNAPSHOT'
