@@ -1,6 +1,6 @@
 allprojects {
     group = 'io.github.spring-xpose'
-    version = '0.1.0-SNAPSHOT'
+    version = project.findProperty('version') ?: '0.1.0-SNAPSHOT'
 }
 
 subprojects {
