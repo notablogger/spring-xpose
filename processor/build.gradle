@@ -44,6 +44,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-autoconfigure'
     testImplementation 'org.springframework.data:spring-data-jpa'   // needed for JpaRepository in generated code
     testImplementation project(':starter')
+    testImplementation 'io.swagger.core.v3:swagger-annotations:2.2.22'
 }
 
 tasks.withType(JavaCompile) {

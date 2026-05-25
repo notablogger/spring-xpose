@@ -9,7 +9,10 @@ import io.github.springxpose.processor.model.RelationFieldModel;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Modifier;
+import javax.tools.FileObject;
+import javax.tools.StandardLocation;
 import java.io.IOException;
+import java.io.Writer;
 import java.util.Map;
 
 public class GraphQlWiringGenerator {
@@ -22,15 +25,13 @@ public class GraphQlWiringGenerator {
 
     public void generate(EntityModel model) {
         generateWiring(model);
-        generateSchema(model);
+        generateSchemaResource(model);
     }
 
     private void generateWiring(EntityModel model) {
         ClassName entityClass = ClassName.bestGuess(model.entityClassName());
-        ClassName repositoryClass = ClassName.get(model.packageName(), model.entitySimpleName() + "Repository");
-        ClassName mapClass = ClassName.get(Map.class);
+        ClassName repositoryClass = ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "Repository");
         String entity = model.entitySimpleName();
-        String entityVar = Character.toLowerCase(entity.charAt(0)) + entity.substring(1);
 
         MethodSpec.Builder configure = MethodSpec.methodBuilder("configure")
             .addAnnotation(Override.class)
@@ -40,10 +41,8 @@ public class GraphQlWiringGenerator {
         if (model.operations().contains(Operation.FIND_ALL) || model.operations().contains(Operation.FIND_BY_ID)) {
             CodeBlock.Builder queryBlock = CodeBlock.builder()
                 .add("builder.type(\"Query\", wiring -> wiring\n");
-            boolean first = true;
             if (model.operations().contains(Operation.FIND_ALL)) {
                 queryBlock.add("    .dataFetcher(\"findAll$L\", env -> repository.findAll())\n", entity);
-                first = false;
             }
             if (model.operations().contains(Operation.FIND_BY_ID)) {
                 queryBlock.add("    .dataFetcher(\"find$LById\", env -> repository.findById(\n        $T.valueOf(env.getArgument(\"id\").toString())\n    ).orElse(null))\n", entity, Long.class);
@@ -72,7 +71,6 @@ public class GraphQlWiringGenerator {
             configure.addStatement(mutBlock.build());
         }
 
-        // mapToEntity helper
         MethodSpec.Builder mapToEntity = MethodSpec.methodBuilder("mapToEntity")
             .addModifiers(Modifier.PRIVATE)
             .returns(entityClass)
@@ -81,15 +79,15 @@ public class GraphQlWiringGenerator {
 
         for (FieldModel field : model.fields()) {
             if (field.isId()) continue;
+            ClassName fieldType = fieldTypeClass(field.typeName());
             mapToEntity.beginControlFlow("if (input.containsKey($S))", field.name())
-                .addStatement("entity.set$L(($T) input.get($S))", capitalize(field.name()), Object.class, field.name())
+                .addStatement("entity.set$L(($T) input.get($S))", capitalize(field.name()), fieldType, field.name())
                 .endControlFlow();
         }
         for (RelationFieldModel rel : model.relations()) {
             if ("SINGLE".equals(rel.relationType())) {
-                String idKey = rel.name() + "Id";
-                mapToEntity.beginControlFlow("if (input.containsKey($S))", idKey)
-                    .addComment("Relation field: set by ID reference — full wiring requires repository lookup")
+                mapToEntity.beginControlFlow("if (input.containsKey($S))", rel.name() + "Id")
+                    .addComment("Relation field: full wiring requires repository lookup")
                     .endControlFlow();
             }
         }
@@ -120,9 +118,9 @@ public class GraphQlWiringGenerator {
         }
     }
 
-    private void generateSchema(EntityModel model) {
+    /** Writes SDL as a .graphqls resource file — Spring Boot auto-discovers these on the classpath. */
+    private void generateSchemaResource(EntityModel model) {
         String entity = model.entitySimpleName();
-        String entityLower = Character.toLowerCase(entity.charAt(0)) + entity.substring(1);
 
         StringBuilder sdl = new StringBuilder();
         sdl.append("type ").append(entity).append(" {\n");
@@ -133,15 +131,13 @@ public class GraphQlWiringGenerator {
         }
         for (RelationFieldModel rel : model.relations()) {
             if (model.relationMode() == RelationMode.ALWAYS_OBJECT) {
-                String relatedSimple = simpleNameOf(rel.relatedEntityType());
-                sdl.append("  ").append(rel.name()).append(": ").append(relatedSimple).append("\n");
+                sdl.append("  ").append(rel.name()).append(": ").append(simpleNameOf(rel.relatedEntityType())).append("\n");
             } else {
                 sdl.append("  ").append(rel.name()).append("Id: ID\n");
             }
         }
         sdl.append("}\n\n");
 
-        // Input types
         sdl.append("input ").append(entity).append("Input {\n");
         for (FieldModel field : model.fields()) {
             if (field.isId()) continue;
@@ -152,8 +148,7 @@ public class GraphQlWiringGenerator {
         }
         sdl.append("}\n\n");
 
-        sdl.append("input ").append(entity).append("UpdateInput {\n");
-        sdl.append("  id: ID!\n");
+        sdl.append("input ").append(entity).append("UpdateInput {\n  id: ID!\n");
         for (FieldModel field : model.fields()) {
             if (field.isId()) continue;
             sdl.append("  ").append(field.name()).append(": ").append(toGraphQlType(field.typeName())).append("\n");
@@ -186,33 +181,17 @@ public class GraphQlWiringGenerator {
             sdl.append("}\n");
         }
 
-        String sdlContent = sdl.toString();
-
-        ClassName byteArrayResource = ClassName.get("org.springframework.core.io", "ByteArrayResource");
-        ClassName graphQlSourceBuilderCustomizer = ClassName.get("org.springframework.graphql.execution", "GraphQlSource");
-
-        MethodSpec customize = MethodSpec.methodBuilder("customize")
-            .addAnnotation(Override.class)
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(ClassName.get("org.springframework.graphql.execution", "GraphQlSource").nestedClass("SchemaResourceBuilder"), "builder")
-            .addStatement("builder.schemaResources(new $T($S.getBytes()))", byteArrayResource, sdlContent)
-            .build();
-
-        TypeSpec schema = TypeSpec.classBuilder(entity + "GraphQlSchema")
-            .addModifiers(Modifier.PUBLIC)
-            .addJavadoc("Generated by spring-xpose — do not edit\n")
-            .addAnnotation(ClassName.get("org.springframework.stereotype", "Component"))
-            .addSuperinterface(ClassName.get("org.springframework.graphql.execution", "GraphQlSourceBuilderCustomizer"))
-            .addMethod(customize)
-            .build();
-
         try {
-            JavaFile.builder(model.packageName() + ".generated", schema)
-                .addFileComment("Generated by spring-xpose — do not edit")
-                .build()
-                .writeTo(processingEnv.getFiler());
+            FileObject resource = processingEnv.getFiler().createResource(
+                StandardLocation.CLASS_OUTPUT,
+                "",
+                "graphql/" + entity.toLowerCase() + "-generated.graphqls"
+            );
+            try (Writer w = resource.openWriter()) {
+                w.write(sdl.toString());
+            }
         } catch (IOException e) {
-            throw new RuntimeException("Failed to write GraphQL schema for " + model.entitySimpleName(), e);
+            throw new RuntimeException("Failed to write GraphQL schema resource for " + entity, e);
         }
     }
 
@@ -227,6 +206,18 @@ public class GraphQlWiringGenerator {
         };
     }
 
+    private static ClassName fieldTypeClass(String javaType) {
+        // Strip type annotations (e.g. "@jakarta.validation.constraints.Positive java.lang.Double" -> "java.lang.Double")
+        String stripped = javaType.replaceAll("@[\\w.]+\\s*", "").trim();
+        // Strip type parameters
+        stripped = stripped.contains("<") ? stripped.substring(0, stripped.indexOf('<')) : stripped;
+        try {
+            return ClassName.bestGuess(stripped);
+        } catch (Exception e) {
+            return ClassName.get("java.lang", "String");
+        }
+    }
+
     private static String simpleNameOf(String fqn) {
         int dot = fqn.lastIndexOf('.');
         return dot >= 0 ? fqn.substring(dot + 1) : fqn;
@@ -237,4 +228,3 @@ public class GraphQlWiringGenerator {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 }
-

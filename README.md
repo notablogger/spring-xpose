@@ -9,7 +9,6 @@ A Spring Boot auto-configuration library that generates REST (and GraphQL) contr
 | `annotations` | `spring-xpose-annotations` | `@ExposeEntity` and supporting enums |
 | `processor` | `spring-xpose-processor` | Compile-time annotation processor (JavaPoet-based code generation) |
 | `starter` | `spring-xpose-starter` | Spring Boot auto-configuration, `SerializationContext`, `RelationAwareSerializer` |
-| `sample` | — | Demo Spring Boot app using H2 |
 
 ## Quick Start
 
@@ -73,12 +72,6 @@ The processor generates at compile time:
 
 ```bash
 ./gradlew build
-```
-
-## Running the sample
-
-```bash
-./gradlew :sample:bootRun
 ```
 
 Then visit:

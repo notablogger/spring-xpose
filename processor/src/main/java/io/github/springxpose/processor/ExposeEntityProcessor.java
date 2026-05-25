@@ -18,6 +18,7 @@ import java.util.Set;
 
 @SupportedAnnotationTypes("io.github.springxpose.annotation.ExposeEntity")
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
+@SupportedOptions("springxpose.mode")
 @AutoService(Processor.class)
 public class ExposeEntityProcessor extends AbstractProcessor {
 
@@ -68,7 +69,7 @@ public class ExposeEntityProcessor extends AbstractProcessor {
 
     private ApiMode resolveMode() {
         Map<String, String> options = processingEnv.getOptions();
-        String mode = options.getOrDefault("spring-xpose.mode", "REST");
+        String mode = options.getOrDefault("springxpose.mode", "REST");
         return "GRAPHQL".equalsIgnoreCase(mode) ? ApiMode.GRAPHQL : ApiMode.REST;
     }
 

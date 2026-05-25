@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="cf9a4afb-f748-47d6-96a1-8eb291d9ee11" name="Changes" comment="Init" />
+    <list default="true" id="cf9a4afb-f748-47d6-96a1-8eb291d9ee11" name="Changes" comment="extended to openapi spec support" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
