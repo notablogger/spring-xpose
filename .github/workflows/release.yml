@@ -29,27 +29,13 @@ jobs:
             echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and publish to staging
-        run: ./gradlew :annotations:publishMavenJavaPublicationToStagingRepository :processor:publishMavenJavaPublicationToStagingRepository :starter:publishMavenJavaPublicationToStagingRepository -Pversion=${{ steps.version.outputs.value }} -x javadoc
+      - name: Publish to Maven Central
+        run: ./gradlew :annotations:publishAllPublicationsToCentralPortal :processor:publishAllPublicationsToCentralPortal :starter:publishAllPublicationsToCentralPortal -Pversion=${{ steps.version.outputs.value }} -x javadoc
         env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-
-      - name: Bundle staging into zip
-        run: |
-          mkdir -p central-bundle
-          cp -r annotations/build/staging-deploy/. central-bundle/
-          cp -r processor/build/staging-deploy/.  central-bundle/
-          cp -r starter/build/staging-deploy/.    central-bundle/
-          cd central-bundle && zip -r ../central-bundle.zip . && cd -
-
-      - name: Upload bundle to Maven Central Portal
-        run: |
-          RESPONSE=$(curl --silent --show-error --fail \
-            -u "${{ secrets.MAVEN_USERNAME }}:${{ secrets.MAVEN_PASSWORD }}" \
-            -F "bundle=@central-bundle.zip" \
-            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC")
-          echo "Response: $RESPONSE"
 
       - name: Collect release artifacts
         run: |
@@ -67,3 +53,4 @@ jobs:
           files: release-artifacts/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

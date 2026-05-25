@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'signing'
+    id 'com.gradleup.nmcp' version '0.0.9'
 }
 
 dependencies {
@@ -40,11 +41,13 @@ publishing {
             }
         }
     }
-    repositories {
-        maven {
-            name = 'staging'
-            url = layout.buildDirectory.dir('staging-deploy')
-        }
+}
+
+nmcp {
+    publishAllPublicationsToCentralPortal {
+        username.set(System.getenv('MAVEN_USERNAME') ?: '')
+        password.set(System.getenv('MAVEN_PASSWORD') ?: '')
+        publishingType.set('AUTOMATIC')
     }
 }
 
