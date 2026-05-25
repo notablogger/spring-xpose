@@ -20,6 +20,7 @@ public class RestControllerGenerator {
     private static final ClassName OA_REQUEST_BODY = ClassName.get("io.swagger.v3.oas.annotations.parameters", "RequestBody");
     private static final ClassName OA_CONTENT      = ClassName.get("io.swagger.v3.oas.annotations.media", "Content");
     private static final ClassName OA_SCHEMA       = ClassName.get("io.swagger.v3.oas.annotations.media", "Schema");
+    private static final ClassName OA_SECURITY_REQ = ClassName.get("io.swagger.v3.oas.annotations.security", "SecurityRequirement");
 
     private final ProcessingEnvironment processingEnv;
 
@@ -46,11 +47,24 @@ public class RestControllerGenerator {
             .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "RequestMapping"))
                 .addMember("value", "$S", "/api/" + model.basePath())
                 .build())
-            // @Tag(name = "Product", description = "CRUD operations for Product")
             .addAnnotation(AnnotationSpec.builder(OA_TAG)
                 .addMember("name", "$S", entity)
-                .addMember("description", "$S", "CRUD operations for " + entity)
-                .build())
+                .addMember("description", "$S", "CRUD operations for " + entity
+                    + securityDescription(model))
+                .build());
+
+        // Add @SecurityRequirement based on authType
+        switch (model.authType()) {
+            case BASIC -> controller.addAnnotation(AnnotationSpec.builder(OA_SECURITY_REQ)
+                .addMember("name", "$S", "basicAuth")
+                .build());
+            case OAUTH2 -> controller.addAnnotation(AnnotationSpec.builder(OA_SECURITY_REQ)
+                .addMember("name", "$S", "bearerAuth")
+                .build());
+            default -> { /* NONE — no security requirement */ }
+        }
+
+        controller
             .addField(FieldSpec.builder(repositoryClass, "repository", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
@@ -228,5 +242,13 @@ public class RestControllerGenerator {
     private static String capitalize(String s) {
         if (s == null || s.isEmpty()) return s;
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
+    }
+
+    private String securityDescription(EntityModel model) {
+        switch (model.authType()) {
+            case BASIC: return " (requires basic authentication)";
+            case OAUTH2: return " (requires OAuth2 authentication)";
+            default: return "";
+        }
     }
 }
