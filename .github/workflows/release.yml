@@ -1,4 +1,4 @@
-name: Publish to GitHub Packages
+name: Publish to Maven Central
 on:
   push:
     tags: ['v*']
@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -33,11 +32,13 @@ jobs:
       - name: Build all modules
         run: ./gradlew :annotations:build :processor:build :starter:build -Pversion=${{ steps.version.outputs.value }} -x javadoc
 
-      - name: Publish to GitHub Packages
+      - name: Publish to Maven Central
         run: ./gradlew :annotations:publish :processor:publish :starter:publish -Pversion=${{ steps.version.outputs.value }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Collect release artifacts
         run: |
@@ -53,4 +54,6 @@ jobs:
           name: v${{ steps.version.outputs.value }}
           generate_release_notes: true
           files: release-artifacts/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
