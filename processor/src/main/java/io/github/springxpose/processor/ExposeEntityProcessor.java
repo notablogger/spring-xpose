@@ -2,7 +2,6 @@ package io.github.springxpose.processor;
 
 import com.google.auto.service.AutoService;
 import io.github.springxpose.annotation.ExposeEntity;
-import io.github.springxpose.processor.generator.GraphQlWiringGenerator;
 import io.github.springxpose.processor.generator.RestControllerGenerator;
 import io.github.springxpose.processor.generator.RepositoryGenerator;
 import io.github.springxpose.processor.generator.SecurityConfigurerGenerator;
@@ -13,7 +12,6 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
-import java.util.Map;
 import java.util.Set;
 
 @SupportedAnnotationTypes("io.github.springxpose.annotation.ExposeEntity")
@@ -28,9 +26,7 @@ public class ExposeEntityProcessor extends AbstractProcessor {
 
             TypeElement entityClass = (TypeElement) element;
             EntityModel model = EntityModel.parse(entityClass, processingEnv);
-            if (model == null) continue; // error was already emitted
-
-            ApiMode mode = resolveMode();
+            if (model == null) continue;
 
             try {
                 new RepositoryGenerator(processingEnv).generate(model);
@@ -42,11 +38,7 @@ public class ExposeEntityProcessor extends AbstractProcessor {
             }
 
             try {
-                if (mode == ApiMode.REST) {
-                    new RestControllerGenerator(processingEnv).generate(model);
-                } else {
-                    new GraphQlWiringGenerator(processingEnv).generate(model);
-                }
+                new RestControllerGenerator(processingEnv).generate(model);
             } catch (Exception e) {
                 processingEnv.getMessager().printMessage(
                     javax.tools.Diagnostic.Kind.ERROR,
@@ -65,12 +57,4 @@ public class ExposeEntityProcessor extends AbstractProcessor {
         }
         return true;
     }
-
-    private ApiMode resolveMode() {
-        Map<String, String> options = processingEnv.getOptions();
-        String mode = options.getOrDefault("spring-xpose.mode", "REST");
-        return "GRAPHQL".equalsIgnoreCase(mode) ? ApiMode.GRAPHQL : ApiMode.REST;
-    }
-
-    public enum ApiMode { REST, GRAPHQL }
 }

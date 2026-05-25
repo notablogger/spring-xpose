@@ -12,7 +12,7 @@ import java.util.List;
 public class RestControllerGenerator {
 
     // OpenAPI annotation class names (springdoc / swagger-core 2.x)
-    private static final ClassName OA_TAG          = ClassName.get("io.swagger.v3.oas.annotations", "tags", "Tag");
+    private static final ClassName OA_TAG          = ClassName.get("io.swagger.v3.oas.annotations.tags", "Tag");
     private static final ClassName OA_OPERATION    = ClassName.get("io.swagger.v3.oas.annotations", "Operation");
     private static final ClassName OA_API_RESPONSE = ClassName.get("io.swagger.v3.oas.annotations.responses", "ApiResponse");
     private static final ClassName OA_API_RESPONSES= ClassName.get("io.swagger.v3.oas.annotations.responses", "ApiResponses");
