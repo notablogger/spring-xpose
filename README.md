@@ -13,13 +13,13 @@ spring-xpose ships as **3 coordinates** — one version, added once each for thr
 ```groovy
 dependencies {
     // Runtime: Spring Boot autoconfiguration, serializer, security wiring
-    implementation 'com.notablogger:spring-xpose-starter:0.1.0'
+    implementation 'io.github.notablogger:spring-xpose-starter:0.1.0'
 
     // Compile-time only: generates controllers/repositories/security at build time
-    annotationProcessor 'com.notablogger:spring-xpose-processor:0.1.0'
+    annotationProcessor 'io.github.notablogger:spring-xpose-processor:0.1.0'
 
     // Compile-time only: @ExposeEntity annotation and supporting enums
-    compileOnly 'com.notablogger:spring-xpose-annotations:0.1.0'
+    compileOnly 'io.github.notablogger:spring-xpose-annotations:0.1.0'
 
     // Required so the processor can read JPA annotations from your entities
     annotationProcessor 'jakarta.persistence:jakarta.persistence-api:3.1.0'
@@ -30,9 +30,9 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("com.notablogger:spring-xpose-starter:0.1.0")
-    annotationProcessor("com.notablogger:spring-xpose-processor:0.1.0")
-    compileOnly("com.notablogger:spring-xpose-annotations:0.1.0")
+    implementation("io.github.notablogger:spring-xpose-starter:0.1.0")
+    annotationProcessor("io.github.notablogger:spring-xpose-processor:0.1.0")
+    compileOnly("io.github.notablogger:spring-xpose-annotations:0.1.0")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api:3.1.0")
 }
 ```
@@ -42,12 +42,12 @@ dependencies {
 ```xml
 <dependencies>
     <dependency>
-        <groupId>com.notablogger</groupId>
+        <groupId>io.github.notablogger</groupId>
         <artifactId>spring-xpose-starter</artifactId>
         <version>0.1.0</version>
     </dependency>
     <dependency>
-        <groupId>com.notablogger</groupId>
+        <groupId>io.github.notablogger</groupId>
         <artifactId>spring-xpose-annotations</artifactId>
         <version>0.1.0</version>
         <scope>provided</scope>
@@ -62,7 +62,7 @@ dependencies {
             <configuration>
                 <annotationProcessorPaths>
                     <path>
-                        <groupId>com.notablogger</groupId>
+                        <groupId>io.github.notablogger</groupId>
                         <artifactId>spring-xpose-processor</artifactId>
                         <version>0.1.0</version>
                     </path>

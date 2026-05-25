@@ -36,7 +36,7 @@ publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
-            groupId = 'com.notablogger'
+            groupId = 'io.github.notablogger'
             artifactId = 'spring-xpose-starter'
 
             pom {

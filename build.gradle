@@ -1,5 +1,5 @@
 allprojects {
-    group = 'com.notablogger'
+    group = 'io.github.notablogger'
     version = project.findProperty('version') ?: '0.1.0-SNAPSHOT'
 }
 
