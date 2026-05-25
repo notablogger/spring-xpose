@@ -16,7 +16,9 @@ jobs:
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v3
       - name: Publish annotations, processor, starter
-        run: ./gradlew :annotations:publish :processor:publish :starter:publish
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          ./gradlew :annotations:publish :processor:publish :starter:publish -Pversion=$VERSION
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
@@ -24,4 +26,3 @@ jobs:
         run: gh release create ${{ github.ref_name }} --generate-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
