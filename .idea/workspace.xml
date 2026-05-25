@@ -5,8 +5,45 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="cf9a4afb-f748-47d6-96a1-8eb291d9ee11" name="Changes" comment="Init">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.github/workflows/ci.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.github/workflows/publish.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.github/workflows/release.yml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/repository/DynamicRepositoryFactory.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/build.gradle" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/AuthType.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/ExposeEntity.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/Operation.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/annotation/RelationMode.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/config/SpringXposeAutoConfiguration.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/config/SpringXposeProperties.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/exception/EntityExposeConfigurationException.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/graphql/DataFetcherFactory.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/graphql/SchemaGenerator.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/model/EntityExposureMetadata.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/processor/EntityExposureProcessor.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/registry/EntityExposureRegistry.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/repository/DynamicRepositoryFactory.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/EntityControllerHandler.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/EntityControllerRegistrar.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/RelationAwareSerializer.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/RelationAwareSerializerModifier.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/rest/SerializationContext.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/security/OperationRoleResolver.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/security/SecurityConfigurerFactory.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/java/io/github/springxpose/util/EntityNameUtils.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/integration/EntityRestIntegrationTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/integration/TestApplication.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/integration/TestProduct.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/EntityExposureMetadataTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/EntityExposureRegistryTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/EntityNameUtilsTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/OperationRoleResolverTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/java/io/github/springxpose/unit/SerializationContextTest.java" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/starter/src/test/resources/application-test.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/settings.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/settings.gradle" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -49,24 +86,28 @@
   &quot;associatedIndex&quot;: 2
 }</component>
   <component name="ProjectId" id="3ED0AHb6WwuMd9pmovr6g3tmA8Z" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "git-widget-placeholder": "main",
+    "kotlin-language-version-configured": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager">
     <configuration name="SpringXposeApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
       <module name="spring-xpose.main" />
@@ -91,7 +132,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1779697687579</updated>
-      <workItem from="1779697688576" duration="1680000" />
+      <workItem from="1779697688576" duration="3490000" />
     </task>
     <task id="LOCAL-00001" summary="Init">
       <option name="closed" value="true" />
@@ -117,7 +158,15 @@
       <option name="project" value="LOCAL" />
       <updated>1779699179979</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="Init">
+      <option name="closed" value="true" />
+      <created>1779699383258</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1779699383258</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
