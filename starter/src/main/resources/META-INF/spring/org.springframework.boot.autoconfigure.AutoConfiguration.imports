@@ -1,2 +1,2 @@
 io.github.springxpose.config.SpringXposeAutoConfiguration
-
+io.github.springxpose.config.SpringXposeOpenApiAutoConfiguration
