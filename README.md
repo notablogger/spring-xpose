@@ -180,12 +180,13 @@ That's it. No controller, repository, DTO, or mapper written by hand.
 
 ### What was generated
 
-Under `build/generated/sources/annotationProcessor/java/main/` you will find five files per entity:
+Under `build/generated/sources/annotationProcessor/java/main/` you will find **six** files per entity:
 
 ```
 ProductRepository.java         ← extends JpaRepository<Product, Long>
-ProductDto.java                ← clean API response shape, no JPA annotations
-ProductMapper.java             ← MapStruct interface: toDto(), toDtoList()
+ProductDto.java                ← clean API response shape (id + non-ignored scalars/relations)
+ProductRequestDto.java         ← request body for CREATE/UPDATE (no id, always Long <rel>Id)
+ProductMapper.java             ← MapStruct interface: toDto(), toDtoList(), toEntity()
 ProductController.java         ← @RestController at /api/products, returns ProductDto
 ProductSecurityConfigurer.java ← SecurityFilterChain scoped to /api/products/**
 ```
@@ -208,7 +209,8 @@ These are real `.java` files — open them in your IDE, set breakpoints, read th
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    ignoredFields = {"internalNote", "auditTrail"}   // hidden from API response
+    ignoredFields = {"internalNote", "auditTrail"},  // hidden from both response AND request DTO
+    customMapper  = MyOrderMapper.class              // optional — omit for MapStruct auto-impl
 )
 public class Order { ... }
 ```
@@ -219,12 +221,13 @@ public class Order { ... }
 |---|---|---|---|
 | `path` | `String` | entity name pluralised | URL segment — `"products"` → `/api/products` |
 | `expose` | `Operation[]` | all five | Which HTTP operations to generate |
-| `relationMode` | `RelationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | How related entities are serialised in the DTO |
+| `relationMode` | `RelationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | How related entities appear in the **response** DTO |
 | `authType` | `AuthType` | `NONE` | Authentication mechanism |
 | `roles` | `String[]` | `{}` | Roles required for all operations |
 | `readRoles` | `String[]` | `{}` | Roles for GET requests (overrides `roles`) |
 | `writeRoles` | `String[]` | `{}` | Roles for POST/PUT/DELETE (overrides `roles`) |
-| `ignoredFields` | `String[]` | `{}` | Entity field names excluded from the generated DTO |
+| `ignoredFields` | `String[]` | `{}` | Fields excluded from **both** the response DTO and the request DTO |
+| `customMapper` | `Class<?>` | `void.class` | Optional custom Spring bean to use instead of the MapStruct-generated mapper |
 
 ### `expose` — Operations
 
@@ -232,8 +235,8 @@ public class Order { ... }
 |---|---|---|---|
 | `FIND_ALL` | `GET` | `/api/{path}` | `200 OK` — returns `List<EntityDto>` |
 | `FIND_BY_ID` | `GET` | `/api/{path}/{id}` | `200 OK` / `404 Not Found` |
-| `CREATE` | `POST` | `/api/{path}` | `201 Created` — request body is the entity |
-| `UPDATE` | `PUT` | `/api/{path}/{id}` | `200 OK` / `404 Not Found` |
+| `CREATE` | `POST` | `/api/{path}` | `201 Created` — `@RequestBody` is `EntityRequestDto` |
+| `UPDATE` | `PUT` | `/api/{path}/{id}` | `200 OK` / `404 Not Found` — `@RequestBody` is `EntityRequestDto` |
 | `DELETE` | `DELETE` | `/api/{path}/{id}` | `204 No Content` / `404 Not Found` |
 
 ### `authType` — Authentication
@@ -246,8 +249,9 @@ public class Order { ... }
 
 ### `relationMode` — Relation serialisation in the DTO
 
-Controls how `@ManyToOne` / `@OneToOne` fields are represented in the generated DTO.  
-`@OneToMany` / `@ManyToMany` collection fields are **always excluded** from the DTO to prevent circular references.
+Controls how `@ManyToOne` / `@OneToOne` fields are represented in the generated **response** DTO.  
+`@OneToMany` / `@ManyToMany` collection fields are **always excluded** from both DTOs to prevent circular references.  
+In the **request** DTO, relations are **always** represented as `Long <field>Id` regardless of `relationMode`.
 
 | Mode | List endpoint (`GET /api/products`) | Single endpoint (`GET /api/products/1`) |
 |---|---|---|
@@ -257,8 +261,7 @@ Controls how `@ManyToOne` / `@OneToOne` fields are represented in the generated 
 
 ### `ignoredFields` — Hiding fields from the API
 
-Fields listed in `ignoredFields` are **excluded from the generated DTO** only. The entity itself retains them for persistence — they are never exposed in API responses.
-
+Fields listed in `ignoredFields` are **excluded from both the response DTO and the request DTO**. The entity retains them for persistence — they are never exposed in API responses and cannot be set via the API.
 ```java
 @ExposeEntity(
     path = "users",
@@ -267,15 +270,74 @@ Fields listed in `ignoredFields` are **excluded from the generated DTO** only. T
 public class User {
     @Id private Long id;
     private String email;
-    private String passwordHash;   // stored in DB, never returned by the API
+    private String passwordHash;   // stored in DB, never returned or accepted by the API
     private String internalScore;  // same
 }
 ```
-
-The generated `UserDto` will contain `id` and `email` only.
-
+`UserDto` contains `id` + `email`. `UserRequestDto` contains `email` only (no `id`, no ignored fields).
 ---
-
+## Request DTO
+For entities with `CREATE` or `UPDATE` operations, spring-xpose generates a **`<Entity>RequestDto`** as the `@RequestBody` type. This cleanly separates what clients _send_ from what the API _returns_.
+| | `<Entity>Dto` (response) | `<Entity>RequestDto` (request body) |
+|---|---|---|
+| `id` field | ✅ included | ❌ excluded — ID comes from the path variable |
+| `ignoredFields` | ❌ excluded | ❌ excluded |
+| `@NotBlank`, `@Positive`, etc. | not copied | ✅ copied from entity fields |
+| `@ManyToOne` / `@OneToOne` | depends on `relationMode` | always `Long <field>Id` |
+| `@OneToMany` / `@ManyToMany` | ❌ always excluded | ❌ always excluded |
+**Example** — `Product` with a `@ManyToOne Category`:
+```json
+// POST /api/products  ← clients send ProductRequestDto
+{ "name": "Laptop", "price": 999.99, "categoryId": 3 }
+// GET /api/products/1  → server returns ProductDto (ALWAYS_OBJECT mode)
+{ "id": 1, "name": "Laptop", "price": 999.99, "category": { "id": 3, "name": "Electronics" } }
+```
+The controller resolves each `<field>Id` to the JPA entity via `EntityManager.getReference()` — a proxy load that satisfies the FK constraint without an extra `SELECT`.
+The generated mapper interface includes `toEntity(RequestDto)` alongside the existing `toDto()` and `toDtoList()`.
+---
+## Custom Mapper (Optional)
+By default, spring-xpose generates a MapStruct `@Mapper(componentModel = "spring")` implementation automatically. When you need custom mapping logic — field transforms, security-aware hiding, or enrichment from other services — you can supply your own Spring bean.
+### How it works
+1. spring-xpose **always generates the `<Entity>Mapper` interface** as a contract (methods: `toDto`, `toDtoList`, `toEntity`).
+2. When `customMapper` is set, the `@Mapper` annotation is **omitted** so MapStruct skips auto-generation.
+3. Spring injects your `@Component` bean wherever the controller declares `<Entity>Mapper mapper`.
+### Example
+```java
+// 1. Implement the generated interface
+@Component
+public class ProductMapper implements
+    io.github.notablogger.springxpose.sample.rest.entity.generated.ProductMapper {
+    @Override
+    public ProductDto toDto(Product entity) {
+        ProductDto dto = new ProductDto();
+        dto.setId(entity.getId());
+        dto.setName(entity.getName());
+        // custom: hide price for internal products
+        if (!Boolean.TRUE.equals(entity.getInternal())) {
+            dto.setPrice(entity.getPrice());
+        }
+        return dto;
+    }
+    @Override
+    public List<ProductDto> toDtoList(List<Product> entities) {
+        return entities.stream().map(this::toDto).toList();
+    }
+    @Override
+    public Product toEntity(ProductRequestDto requestDto) {
+        Product p = new Product();
+        p.setName(requestDto.getName());
+        p.setPrice(requestDto.getPrice());
+        return p;
+    }
+}
+// 2. Reference it in the annotation — no other changes needed
+@Entity
+@ExposeEntity(path = "products", customMapper = ProductMapper.class)
+public class Product { ... }
+```
+> **Note:** Your class must implement the **generated** `<Entity>Mapper` interface (in the `<entity-package>.generated` package). Spring wires it automatically because it is a `@Component` satisfying the `<Entity>Mapper` type required by the generated controller.
+The sample project (`spring-xpose-sample-rest`) contains `CustomCategoryMapper` — a working demonstration that upper-cases category names in responses.
+---
 ## Swagger UI (Optional)
 
 Add springdoc to your dependencies:
@@ -355,7 +417,9 @@ Run tests:
 - [x] `ignoredFields` — hide entity fields from the API
 - [x] OpenAPI / Swagger UI with auth scheme
 - [ ] GraphQL — compile-time DataFetcher wiring
-- [ ] DTO projection support (custom DTO class override)
+- [x] Request DTO — separate request/response shapes with validation annotation propagation
+- [x] Custom mapper — plug in your own Spring bean via `customMapper = YourMapper.class`
+- [ ] DTO projection support (custom response DTO class override)
 
 ---
 

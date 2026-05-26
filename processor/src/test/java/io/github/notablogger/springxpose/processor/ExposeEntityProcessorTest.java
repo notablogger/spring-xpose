@@ -41,6 +41,7 @@ class ExposeEntityProcessorTest {
         assertThat(c).succeeded();
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookRepository");
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookDto");
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookRequestDto");
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookMapper");
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController");
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookSecurityConfigurer");
@@ -133,6 +134,7 @@ class ExposeEntityProcessorTest {
         assertTrue(mapper.contains("spring"), "Mapper componentModel must be spring");
         assertTrue(mapper.contains("toDto"), "Mapper must have toDto method");
         assertTrue(mapper.contains("toDtoList"), "Mapper must have toDtoList method");
+        assertTrue(mapper.contains("toEntity"), "Mapper must have toEntity method");
     }
 
     @Test
@@ -271,5 +273,217 @@ class ExposeEntityProcessorTest {
                 d.getKind() == Diagnostic.Kind.ERROR &&
                 d.getMessage(null).contains("@ExposeEntity: no @Id field found")),
             "Expected error '@ExposeEntity: no @Id field found' not found");
+    }
+
+    @Test
+    void requestDtoIsGenerated() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(BOOK_SOURCE);
+
+        assertThat(c).succeeded();
+        String reqDto = c.generatedSourceFile("com.example.entity.generated.BookRequestDto")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(reqDto.contains("title"), "RequestDto must contain non-ignored scalar fields");
+        assertFalse(reqDto.contains("Long id"), "RequestDto must NOT contain id");
+    }
+
+    @Test
+    void requestDtoExcludesIdAndIgnoredFields() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.entity.Book",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+                @Entity
+                @ExposeEntity(path="books", ignoredFields={"internalNotes"})
+                public class Book {
+                    @Id @GeneratedValue private Long id;
+                    private String title;
+                    private String internalNotes;
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String t) { this.title = t; }
+                    public String getInternalNotes() { return internalNotes; }
+                    public void setInternalNotes(String s) { this.internalNotes = s; }
+                }
+                """
+            )
+        );
+        assertThat(c).succeeded();
+        String reqDto = c.generatedSourceFile("com.example.entity.generated.BookRequestDto")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(reqDto.contains("title"), "RequestDto must include non-ignored 'title'");
+        assertFalse(reqDto.contains("internalNotes"), "RequestDto must exclude ignoredFields");
+        assertFalse(reqDto.contains("Long id"), "RequestDto must not include id field");
+    }
+
+    @Test
+    void requestDtoRelationRepresentedAsId() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.entity.Category",
+                """
+                package com.example.entity;
+                import jakarta.persistence.*;
+                @Entity public class Category {
+                    @Id @GeneratedValue private Long id;
+                    private String name;
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public String getName() { return name; }
+                    public void setName(String n) { this.name = n; }
+                }
+                """
+            ),
+            JavaFileObjects.forSourceString("com.example.entity.Book",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+                @Entity
+                @ExposeEntity(path="books", relationMode=RelationMode.ALWAYS_OBJECT)
+                public class Book {
+                    @Id @GeneratedValue private Long id;
+                    private String title;
+                    @ManyToOne Category category;
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String t) { this.title = t; }
+                    public Category getCategory() { return category; }
+                    public void setCategory(Category c) { this.category = c; }
+                }
+                """
+            )
+        );
+        assertThat(c).succeeded();
+        String reqDto = c.generatedSourceFile("com.example.entity.generated.BookRequestDto")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(reqDto.contains("categoryId"),
+            "RequestDto must represent ALWAYS_OBJECT relation as Long categoryId");
+        assertFalse(reqDto.contains("Category category"),
+            "RequestDto must NOT contain full Category object");
+    }
+
+    @Test
+    void customMapper_mapperInterfaceHasNoMapperAnnotation() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.mapper.MyBookMapper",
+                """
+                package com.example.mapper;
+                public class MyBookMapper {}
+                """
+            ),
+            JavaFileObjects.forSourceString("com.example.entity.Book",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+                @Entity
+                @ExposeEntity(path="books", customMapper = com.example.mapper.MyBookMapper.class)
+                public class Book {
+                    @Id @GeneratedValue private Long id;
+                    private String title;
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String t) { this.title = t; }
+                }
+                """
+            )
+        );
+        assertThat(c).succeeded();
+        String mapper = c.generatedSourceFile("com.example.entity.generated.BookMapper")
+            .orElseThrow().getCharContent(false).toString();
+        assertFalse(mapper.contains("@Mapper"),
+            "When customMapper is set, the generated interface must NOT have @Mapper so MapStruct skips it");
+        assertTrue(mapper.contains("toDto"), "Mapper interface contract must still have toDto");
+        assertTrue(mapper.contains("toEntity"), "Mapper interface contract must still have toEntity");
+    }
+
+    @Test
+    void validationAnnotationsCopiedToRequestDto() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.entity.Book",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+                import jakarta.validation.constraints.*;
+                @Entity
+                @ExposeEntity(path="books")
+                public class Book {
+                    @Id @GeneratedValue private Long id;
+                    @NotBlank private String title;
+                    @Positive private Double price;
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String t) { this.title = t; }
+                    public Double getPrice() { return price; }
+                    public void setPrice(Double p) { this.price = p; }
+                }
+                """
+            )
+        );
+        assertThat(c).succeeded();
+        String reqDto = c.generatedSourceFile("com.example.entity.generated.BookRequestDto")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(reqDto.contains("NotBlank"), "RequestDto must carry @NotBlank from entity field");
+        assertTrue(reqDto.contains("Positive"), "RequestDto must carry @Positive from entity field");
+    }
+
+    @Test
+    void controllerUsesRequestDtoForWriteOps() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(BOOK_SOURCE);
+
+        assertThat(c).succeeded();
+        String ctrl = c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(ctrl.contains("BookRequestDto"), "Controller must use BookRequestDto for write operations");
+        assertTrue(ctrl.contains("mapper.toEntity"), "Controller must call mapper.toEntity for write ops");
+    }
+
+    @Test
+    void versionFieldExcludedFromRequestDto() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.entity.Book",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+                @Entity
+                @ExposeEntity(path="books")
+                public class Book {
+                    @Id @GeneratedValue private Long id;
+                    @Version private Long version;
+                    private String title;
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public Long getVersion() { return version; }
+                    public void setVersion(Long v) { this.version = v; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String t) { this.title = t; }
+                }
+                """
+            )
+        );
+        assertThat(c).succeeded();
+        String reqDto = c.generatedSourceFile("com.example.entity.generated.BookRequestDto")
+            .orElseThrow().getCharContent(false).toString();
+        assertFalse(reqDto.contains("version"),
+            "RequestDto must NOT contain @Version field — it is managed by JPA");
+        assertTrue(reqDto.contains("title"), "RequestDto must still contain non-version fields");
+    }
+
+    @Test
+    void mapperUpdatesEntityMethodGenerated() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(BOOK_SOURCE);
+
+        assertThat(c).succeeded();
+        String mapper = c.generatedSourceFile("com.example.entity.generated.BookMapper")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(mapper.contains("updateEntity"), "Mapper must have updateEntity method for safe PUT merge");
+        assertTrue(mapper.contains("MappingTarget"), "updateEntity must use @MappingTarget");
     }
 }

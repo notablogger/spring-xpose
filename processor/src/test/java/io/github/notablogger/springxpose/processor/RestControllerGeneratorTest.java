@@ -58,6 +58,9 @@ class RestControllerGeneratorTest {
         assertThat(c).succeeded();
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("@PostMapping");
+        // Body must accept RequestDto, not the raw entity
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
+            .contentsAsUtf8String().contains("BookRequestDto");
     }
 
     @Test
@@ -174,6 +177,9 @@ class RestControllerGeneratorTest {
         assertThat(c).succeeded();
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("@Valid");
+        // write methods must call mapper.toEntity
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
+            .contentsAsUtf8String().contains("mapper.toEntity");
     }
 
     @Test
@@ -183,5 +189,59 @@ class RestControllerGeneratorTest {
 
         assertThat(c).succeeded();
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookRepository");
+    }
+
+    @Test
+    void writeMethodsAreTransactional() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow().getCharContent(false).toString();
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("@Transactional"),
+            "Write methods must be annotated with @Transactional");
+    }
+
+    @Test
+    void updateUsesLoadThenMerge() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow().getCharContent(false).toString();
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("findById(id)"),
+            "UPDATE must load the entity first (load-then-merge)");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("mapper.updateEntity"),
+            "UPDATE must call mapper.updateEntity to merge fields without blind overwrite");
+    }
+
+    @Test
+    void pageableTrueGeneratesPageableParameter() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", pageable=true)"), REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow().getCharContent(false).toString();
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("Pageable"),
+            "pageable=true must generate a Pageable parameter on findAll");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("Page"),
+            "pageable=true must return Page<Dto> not List<Dto>");
+    }
+
+    @Test
+    void pageableFalseGeneratesFlatList() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", pageable=false)"), REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow().getCharContent(false).toString();
+        org.junit.jupiter.api.Assertions.assertFalse(src.contains("Pageable"),
+            "pageable=false must NOT generate a Pageable parameter");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("List<"),
+            "pageable=false must return List<Dto>");
     }
 }

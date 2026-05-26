@@ -1,5 +1,6 @@
 package io.github.notablogger.springxpose.config;
 
+import io.github.notablogger.springxpose.exception.SpringXposeExceptionHandler;
 import io.github.notablogger.springxpose.serializer.RelationAwareSerializer;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -20,5 +21,11 @@ public class SpringXposeAutoConfiguration {
     @ConditionalOnMissingBean
     public RelationAwareSerializer relationAwareSerializer() {
         return new RelationAwareSerializer();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public SpringXposeExceptionHandler springXposeExceptionHandler() {
+        return new SpringXposeExceptionHandler();
     }
 }

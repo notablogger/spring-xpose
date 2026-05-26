@@ -28,9 +28,28 @@ public @interface ExposeEntity {
     String[] writeRoles() default {};
 
     /**
-     * Entity field names to exclude from the generated DTO (and therefore from API responses).
-     * The entity itself retains these fields for persistence — they are only hidden from the output.
-     * Example: {@code ignoredFields = {"password", "internalCode"}}
+     * Entity field names to exclude from both the generated response DTO and request DTO.
+     * The entity itself retains these fields for persistence.
      */
     String[] ignoredFields() default {};
+
+    /**
+     * When {@code true}, the generated {@code findAll} endpoint accepts Spring Data
+     * {@code Pageable} query parameters ({@code ?page=0&size=20&sort=name,asc}) and
+     * returns a {@code Page<Dto>} instead of a flat {@code List<Dto>}.
+     * <p>
+     * Defaults to {@code false} to preserve backward-compatible list responses.
+     */
+    boolean pageable() default false;
+
+    /**
+     * Optional custom MapStruct mapper class to use instead of the generated one.
+     * <p>
+     * When set, spring-xpose omits {@code @Mapper} from the generated interface so
+     * MapStruct skips auto-generation. Your class must implement the generated
+     * {@code <Entity>Mapper} interface and be annotated with {@code @Component}.
+     * <p>
+     * Defaults to {@code void.class} — use the MapStruct-generated implementation.
+     */
+    Class<?> customMapper() default void.class;
 }
