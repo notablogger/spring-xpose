@@ -1,6 +1,6 @@
 allprojects {
     group = 'io.github.notablogger'
-    version = project.findProperty('version') ?: '0.3.0'
+    version = project.findProperty('version') ?: '1.0.0'
 }
 
 subprojects {
