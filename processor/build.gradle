@@ -22,6 +22,9 @@ dependencies {
     implementation 'com.google.auto.service:auto-service:1.1.1'
     annotationProcessor 'com.google.auto.service:auto-service:1.1.1'
 
+    // MapStruct annotations — compileOnly so the processor can reference @Mapper in generated code
+    compileOnly 'org.mapstruct:mapstruct:1.5.5.Final'
+
     compileOnly 'jakarta.persistence:jakarta.persistence-api:3.1.0'
     compileOnly 'org.springframework:spring-web:6.1.0'
     compileOnly 'org.springframework:spring-context:6.1.0'
@@ -36,6 +39,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
     testImplementation 'junit:junit:4.13.2'   // compile-testing requires JUnit 4 internally
     testImplementation 'com.google.truth:truth:1.1.5'
+    testImplementation 'org.mapstruct:mapstruct:1.5.5.Final'
 
     // Runtime deps needed so compile-testing can compile the generated sources
     testImplementation 'org.springframework:spring-web:6.1.0'

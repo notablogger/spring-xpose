@@ -24,6 +24,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 
+    // MapStruct runtime — needed by the generated *Mapper implementations
+    api 'org.mapstruct:mapstruct:1.5.5.Final'
+
     compileOnly 'org.springframework.boot:spring-boot-starter-graphql'
     compileOnly 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
 

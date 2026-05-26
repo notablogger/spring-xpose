@@ -26,5 +26,11 @@ public @interface ExposeEntity {
     String[] readRoles() default {};
 
     String[] writeRoles() default {};
-}
 
+    /**
+     * Entity field names to exclude from the generated DTO (and therefore from API responses).
+     * The entity itself retains these fields for persistence — they are only hidden from the output.
+     * Example: {@code ignoredFields = {"password", "internalCode"}}
+     */
+    String[] ignoredFields() default {};
+}

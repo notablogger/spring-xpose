@@ -25,7 +25,8 @@ public record EntityModel(
     AuthType authType,
     Set<String> roles,
     Set<String> readRoles,
-    Set<String> writeRoles
+    Set<String> writeRoles,
+    Set<String> ignoredFields
 ) {
     public static EntityModel parse(TypeElement element, ProcessingEnvironment env) {
         ExposeEntity annotation = element.getAnnotation(ExposeEntity.class);
@@ -86,13 +87,14 @@ public record EntityModel(
         Set<String> roles = new LinkedHashSet<>(Arrays.asList(annotation.roles()));
         Set<String> readRoles = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
+        Set<String> ignoredFields = new LinkedHashSet<>(Arrays.asList(annotation.ignoredFields()));
 
         return new EntityModel(
             qualifiedName, simpleName, packageName,
             idFieldName, idClassName, basePath,
             fields, relations, operations,
             annotation.relationMode(), annotation.authType(),
-            roles, readRoles, writeRoles
+            roles, readRoles, writeRoles, ignoredFields
         );
     }
 
@@ -108,4 +110,3 @@ public record EntityModel(
         return type.toString();
     }
 }
-

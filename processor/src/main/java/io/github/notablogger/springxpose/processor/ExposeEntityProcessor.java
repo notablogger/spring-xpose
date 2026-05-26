@@ -2,6 +2,8 @@ package io.github.notablogger.springxpose.processor;
 
 import com.google.auto.service.AutoService;
 import io.github.notablogger.springxpose.annotation.ExposeEntity;
+import io.github.notablogger.springxpose.processor.generator.DtoGenerator;
+import io.github.notablogger.springxpose.processor.generator.MapperGenerator;
 import io.github.notablogger.springxpose.processor.generator.RestControllerGenerator;
 import io.github.notablogger.springxpose.processor.generator.RepositoryGenerator;
 import io.github.notablogger.springxpose.processor.generator.SecurityConfigurerGenerator;
@@ -28,33 +30,28 @@ public class ExposeEntityProcessor extends AbstractProcessor {
             EntityModel model = EntityModel.parse(entityClass, processingEnv);
             if (model == null) continue;
 
-            try {
-                new RepositoryGenerator(processingEnv).generate(model);
-            } catch (Exception e) {
-                processingEnv.getMessager().printMessage(
-                    javax.tools.Diagnostic.Kind.ERROR,
-                    "spring-xpose: repository generation failed for " + model.entitySimpleName() + ": " + e,
-                    entityClass);
-            }
+            try { new RepositoryGenerator(processingEnv).generate(model); }
+            catch (Exception e) { error(entityClass, "repository", e); }
 
-            try {
-                new RestControllerGenerator(processingEnv).generate(model);
-            } catch (Exception e) {
-                processingEnv.getMessager().printMessage(
-                    javax.tools.Diagnostic.Kind.ERROR,
-                    "spring-xpose: controller generation failed for " + model.entitySimpleName() + ": " + e,
-                    entityClass);
-            }
+            try { new DtoGenerator(processingEnv).generate(model); }
+            catch (Exception e) { error(entityClass, "DTO", e); }
 
-            try {
-                new SecurityConfigurerGenerator(processingEnv).generate(model);
-            } catch (Exception e) {
-                processingEnv.getMessager().printMessage(
-                    javax.tools.Diagnostic.Kind.ERROR,
-                    "spring-xpose: security generation failed for " + model.entitySimpleName() + ": " + e,
-                    entityClass);
-            }
+            try { new MapperGenerator(processingEnv).generate(model); }
+            catch (Exception e) { error(entityClass, "mapper", e); }
+
+            try { new RestControllerGenerator(processingEnv).generate(model); }
+            catch (Exception e) { error(entityClass, "controller", e); }
+
+            try { new SecurityConfigurerGenerator(processingEnv).generate(model); }
+            catch (Exception e) { error(entityClass, "security", e); }
         }
         return true;
+    }
+
+    private void error(TypeElement element, String phase, Exception e) {
+        processingEnv.getMessager().printMessage(
+            javax.tools.Diagnostic.Kind.ERROR,
+            "spring-xpose: " + phase + " generation failed for " + element.getSimpleName() + ": " + e,
+            element);
     }
 }

@@ -31,14 +31,15 @@ public class RestControllerGenerator {
     public void generate(EntityModel model) {
         ClassName entityClass        = ClassName.bestGuess(model.entityClassName());
         ClassName repositoryClass    = ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "Repository");
+        ClassName dtoClass           = ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "Dto");
+        ClassName mapperClass        = ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "Mapper");
         ClassName idClass            = ClassName.bestGuess(model.idClassName());
         ClassName responseEntity     = ClassName.get("org.springframework.http", "ResponseEntity");
         ClassName listClass          = ClassName.get("java.util", "List");
         ClassName httpStatus         = ClassName.get("org.springframework.http", "HttpStatus");
         ClassName serializationContext = ClassName.get("io.github.notablogger.springxpose.serializer", "SerializationContext");
 
-        String entity    = model.entitySimpleName();
-        String entityLc  = entity.toLowerCase();
+        String entity   = model.entitySimpleName();
 
         TypeSpec.Builder controller = TypeSpec.classBuilder(entity + "Controller")
             .addModifiers(Modifier.PUBLIC)
@@ -49,32 +50,33 @@ public class RestControllerGenerator {
                 .build())
             .addAnnotation(AnnotationSpec.builder(OA_TAG)
                 .addMember("name", "$S", entity)
-                .addMember("description", "$S", "CRUD operations for " + entity
-                    + securityDescription(model))
+                .addMember("description", "$S", "CRUD operations for " + entity + securityDescription(model))
                 .build());
 
         // Add @SecurityRequirement based on authType
         switch (model.authType()) {
             case BASIC -> controller.addAnnotation(AnnotationSpec.builder(OA_SECURITY_REQ)
-                .addMember("name", "$S", "basicAuth")
-                .build());
+                .addMember("name", "$S", "basicAuth").build());
             case OAUTH2 -> controller.addAnnotation(AnnotationSpec.builder(OA_SECURITY_REQ)
-                .addMember("name", "$S", "bearerAuth")
-                .build());
-            default -> { /* NONE — no security requirement */ }
+                .addMember("name", "$S", "bearerAuth").build());
+            default -> {}
         }
 
+        // Fields: repository + mapper
         controller
             .addField(FieldSpec.builder(repositoryClass, "repository", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(mapperClass, "mapper", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(repositoryClass, "repository")
+                .addParameter(mapperClass, "mapper")
                 .addStatement("this.repository = repository")
+                .addStatement("this.mapper = mapper")
                 .build());
 
         if (model.operations().contains(Operation.FIND_ALL)) {
             TypeName returnType = ParameterizedTypeName.get(responseEntity,
-                ParameterizedTypeName.get(listClass, entityClass));
+                ParameterizedTypeName.get(listClass, dtoClass));
             controller.addMethod(MethodSpec.methodBuilder("findAll")
                 .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "GetMapping"))
                 .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
@@ -88,7 +90,7 @@ public class RestControllerGenerator {
                 .returns(returnType)
                 .addStatement("$T.set($T.Mode.LIST)", serializationContext, serializationContext)
                 .beginControlFlow("try")
-                .addStatement("return $T.ok(repository.findAll())", responseEntity)
+                .addStatement("return $T.ok(mapper.toDtoList(repository.findAll()))", responseEntity)
                 .nextControlFlow("finally")
                 .addStatement("$T.clear()", serializationContext)
                 .endControlFlow()
@@ -96,19 +98,17 @@ public class RestControllerGenerator {
         }
 
         if (model.operations().contains(Operation.FIND_BY_ID)) {
-            TypeName returnType = ParameterizedTypeName.get(responseEntity, entityClass);
+            TypeName returnType = ParameterizedTypeName.get(responseEntity, dtoClass);
             controller.addMethod(MethodSpec.methodBuilder("findById")
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "GetMapping"))
-                    .addMember("value", "$S", "/{id}")
-                    .build())
+                    .addMember("value", "$S", "/{id}").build())
                 .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
                     .addMember("summary", "$S", "Get a " + entity + " by ID")
                     .addMember("operationId", "$S", "find" + entity + "ById")
                     .build())
                 .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
                     .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
-                        OA_API_RESPONSE, "200", "Found",
-                        OA_API_RESPONSE, "404", "Not found")
+                        OA_API_RESPONSE, "200", "Found", OA_API_RESPONSE, "404", "Not found")
                     .build())
                 .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
@@ -116,12 +116,11 @@ public class RestControllerGenerator {
                     .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "PathVariable"))
                     .addAnnotation(AnnotationSpec.builder(OA_PARAMETER)
                         .addMember("description", "$S", "ID of the " + entity + " to retrieve")
-                        .addMember("required", "$L", true)
-                        .build())
+                        .addMember("required", "$L", true).build())
                     .build())
                 .addStatement("$T.set($T.Mode.SINGLE)", serializationContext, serializationContext)
                 .beginControlFlow("try")
-                .addStatement("return repository.findById(id)\n    .map($T::ok)\n    .orElse($T.notFound().build())", responseEntity, responseEntity)
+                .addStatement("return repository.findById(id)\n    .map(mapper::toDto)\n    .map($T::ok)\n    .orElse($T.notFound().build())", responseEntity, responseEntity)
                 .nextControlFlow("finally")
                 .addStatement("$T.clear()", serializationContext)
                 .endControlFlow()
@@ -129,7 +128,7 @@ public class RestControllerGenerator {
         }
 
         if (model.operations().contains(Operation.CREATE)) {
-            TypeName returnType = ParameterizedTypeName.get(responseEntity, entityClass);
+            TypeName returnType = ParameterizedTypeName.get(responseEntity, dtoClass);
             controller.addMethod(MethodSpec.methodBuilder("create")
                 .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "PostMapping"))
                 .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
@@ -138,8 +137,7 @@ public class RestControllerGenerator {
                     .build())
                 .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
                     .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
-                        OA_API_RESPONSE, "201", "Created",
-                        OA_API_RESPONSE, "400", "Validation error")
+                        OA_API_RESPONSE, "201", "Created", OA_API_RESPONSE, "400", "Validation error")
                     .build())
                 .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
@@ -148,20 +146,18 @@ public class RestControllerGenerator {
                     .addAnnotation(ClassName.get("jakarta.validation", "Valid"))
                     .addAnnotation(AnnotationSpec.builder(OA_REQUEST_BODY)
                         .addMember("description", "$S", entity + " to create")
-                        .addMember("required", "$L", true)
-                        .build())
+                        .addMember("required", "$L", true).build())
                     .build())
-                .addStatement("return $T.status($T.CREATED).body(repository.save(entity))", responseEntity, httpStatus)
+                .addStatement("return $T.status($T.CREATED).body(mapper.toDto(repository.save(entity)))", responseEntity, httpStatus)
                 .build());
         }
 
         if (model.operations().contains(Operation.UPDATE)) {
-            TypeName returnType = ParameterizedTypeName.get(responseEntity, entityClass);
+            TypeName returnType = ParameterizedTypeName.get(responseEntity, dtoClass);
             String setIdStatement = "entity.set" + capitalize(model.idFieldName()) + "(id)";
             controller.addMethod(MethodSpec.methodBuilder("update")
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "PutMapping"))
-                    .addMember("value", "$S", "/{id}")
-                    .build())
+                    .addMember("value", "$S", "/{id}").build())
                 .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
                     .addMember("summary", "$S", "Update an existing " + entity)
                     .addMember("operationId", "$S", "update" + entity)
@@ -178,22 +174,20 @@ public class RestControllerGenerator {
                     .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "PathVariable"))
                     .addAnnotation(AnnotationSpec.builder(OA_PARAMETER)
                         .addMember("description", "$S", "ID of the " + entity + " to update")
-                        .addMember("required", "$L", true)
-                        .build())
+                        .addMember("required", "$L", true).build())
                     .build())
                 .addParameter(ParameterSpec.builder(entityClass, "entity")
                     .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "RequestBody"))
                     .addAnnotation(ClassName.get("jakarta.validation", "Valid"))
                     .addAnnotation(AnnotationSpec.builder(OA_REQUEST_BODY)
                         .addMember("description", "$S", "Updated " + entity + " data")
-                        .addMember("required", "$L", true)
-                        .build())
+                        .addMember("required", "$L", true).build())
                     .build())
                 .beginControlFlow("if (!repository.existsById(id))")
                 .addStatement("return $T.notFound().build()", responseEntity)
                 .endControlFlow()
                 .addStatement(setIdStatement)
-                .addStatement("return $T.ok(repository.save(entity))", responseEntity)
+                .addStatement("return $T.ok(mapper.toDto(repository.save(entity)))", responseEntity)
                 .build());
         }
 
@@ -201,16 +195,14 @@ public class RestControllerGenerator {
             TypeName returnType = ParameterizedTypeName.get(responseEntity, ClassName.get(Void.class));
             controller.addMethod(MethodSpec.methodBuilder("delete")
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "DeleteMapping"))
-                    .addMember("value", "$S", "/{id}")
-                    .build())
+                    .addMember("value", "$S", "/{id}").build())
                 .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
                     .addMember("summary", "$S", "Delete a " + entity + " by ID")
                     .addMember("operationId", "$S", "delete" + entity)
                     .build())
                 .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
                     .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
-                        OA_API_RESPONSE, "204", "Deleted",
-                        OA_API_RESPONSE, "404", "Not found")
+                        OA_API_RESPONSE, "204", "Deleted", OA_API_RESPONSE, "404", "Not found")
                     .build())
                 .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
@@ -218,8 +210,7 @@ public class RestControllerGenerator {
                     .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "PathVariable"))
                     .addAnnotation(AnnotationSpec.builder(OA_PARAMETER)
                         .addMember("description", "$S", "ID of the " + entity + " to delete")
-                        .addMember("required", "$L", true)
-                        .build())
+                        .addMember("required", "$L", true).build())
                     .build())
                 .beginControlFlow("if (!repository.existsById(id))")
                 .addStatement("return $T.notFound().build()", responseEntity)
@@ -245,10 +236,10 @@ public class RestControllerGenerator {
     }
 
     private String securityDescription(EntityModel model) {
-        switch (model.authType()) {
-            case BASIC: return " (requires basic authentication)";
-            case OAUTH2: return " (requires OAuth2 authentication)";
-            default: return "";
-        }
+        return switch (model.authType()) {
+            case BASIC  -> " (requires basic authentication)";
+            case OAUTH2 -> " (requires OAuth2 authentication)";
+            default     -> "";
+        };
     }
 }
