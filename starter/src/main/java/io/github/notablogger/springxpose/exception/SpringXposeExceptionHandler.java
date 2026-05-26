@@ -1,6 +1,8 @@
 package io.github.notablogger.springxpose.exception;
 
 import jakarta.persistence.EntityNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
@@ -30,6 +32,8 @@ import java.util.stream.Collectors;
  */
 @RestControllerAdvice
 public class SpringXposeExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(SpringXposeExceptionHandler.class);
 
     /** Malformed / unreadable JSON body. */
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -80,10 +84,13 @@ public class SpringXposeExceptionHandler {
      */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ProblemDetail> handleConstraintViolation(DataIntegrityViolationException ex) {
+        log.warn("Data integrity violation while processing request", ex);
+
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.CONFLICT);
         pd.setType(URI.create("urn:springxpose:constraint-violation"));
         pd.setTitle("Data integrity violation");
-        pd.setDetail("The request conflicts with existing data: " + rootMessage(ex));
+        pd.setDetail("The request can not be processed.");
+        pd.setProperty("errorCode", "CONSTRAINT_VIOLATION");
         return ResponseEntity.status(HttpStatus.CONFLICT).body(pd);
     }
 
