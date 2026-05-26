@@ -1,0 +1,91 @@
+name: Bug Report
+description: Report a reproducible bug in spring-xpose
+title: "fix: <short description>"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below as completely as possible.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I am using the latest release of spring-xpose
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: spring-xpose version
+      placeholder: "e.g. 0.3.1"
+    validations:
+      required: true
+
+  - type: input
+    id: java_version
+    attributes:
+      label: Java version
+      placeholder: "e.g. 21.0.3"
+    validations:
+      required: true
+
+  - type: input
+    id: spring_boot_version
+    attributes:
+      label: Spring Boot version
+      placeholder: "e.g. 3.3.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: |
+        The annotated entity class and any relevant configuration. The smaller, the better.
+      render: java
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What actually happened? Include the full stack trace or compiler error if applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: generated_code
+    attributes:
+      label: Generated code (if relevant)
+      description: Paste the problematic generated source from `build/generated/sources/annotationProcessor/`.
+      render: java
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else that might be relevant (build tool, OS, IDE, etc.)
+

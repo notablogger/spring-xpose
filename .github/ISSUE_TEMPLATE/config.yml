@@ -1,0 +1,8 @@
+contact_links:
+  - name: Documentation
+    url: https://github.com/notablogger/spring-xpose#readme
+    about: Read the README before opening an issue — your question may already be answered.
+  - name: Discussions
+    url: https://github.com/notablogger/spring-xpose/discussions
+    about: For questions, ideas, and show-and-tell — not for bugs.
+

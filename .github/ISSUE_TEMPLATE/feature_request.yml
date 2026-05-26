@@ -1,0 +1,70 @@
+name: Feature Request
+description: Propose a new feature or enhancement for spring-xpose
+title: "feat: <short description>"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening a feature request, please check the [discussions](https://github.com/notablogger/spring-xpose/discussions) and existing issues to avoid duplicates.
+        For anything that changes the generated code shape or adds new `@ExposeEntity` attributes, **open this issue first** so we can agree on design before any code is written.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I searched existing issues and discussions — this has not been requested before
+          required: true
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Affected module
+      options:
+        - annotations
+        - processor
+        - starter
+        - sample
+        - docs / CI
+      multiple: true
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve? Why is the current behaviour insufficient?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: |
+        Describe the solution you'd like. If it involves a new `@ExposeEntity` attribute, show the proposed API:
+      render: java
+    validations:
+      required: true
+
+  - type: textarea
+    id: generated_output
+    attributes:
+      label: Expected generated output (if applicable)
+      description: Show a sketch of what the generated Java source should look like.
+      render: java
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you evaluate?
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Links, prior art, related issues, etc.
+
