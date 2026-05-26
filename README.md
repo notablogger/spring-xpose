@@ -3,6 +3,7 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.notablogger/spring-xpose-starter?label=Maven%20Central)](https://central.sonatype.com/search?q=io.github.notablogger)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Build](https://github.com/notablogger/spring-xpose/actions/workflows/ci.yml/badge.svg)](https://github.com/notablogger/spring-xpose/actions/workflows/ci.yml)
+[![PR Build](https://github.com/notablogger/spring-xpose/actions/workflows/pr.yml/badge.svg)](https://github.com/notablogger/spring-xpose/actions/workflows/pr.yml)
 
 > **Annotate your JPA entity once. Get a fully working REST API at compile time.**
 
@@ -390,6 +391,46 @@ spring-xpose:
 ## Sample Project
 
 → **[spring-xpose-sample-rest](https://github.com/notablogger/spring-xpose-sample-rest)** — a runnable Spring Boot app demonstrating DTOs, `ignoredFields`, all three auth types, relation modes, validation, and Swagger UI.
+
+---
+
+
+## Documentation
+
+Technical docs live under [`docs/tech/`](docs/tech/):
+
+| Document | What's in it |
+|---|---|
+| [`architecture.md`](docs/tech/architecture.md) | Module layout, compile-time data-flow diagram, full Mermaid class diagram, runtime request lifecycle, security filter chain design, key design decisions |
+| [`generator-guide.md`](docs/tech/generator-guide.md) | How the APT pipeline works, per-generator responsibilities, step-by-step guide for adding a new generator or `@ExposeEntity` attribute, testing patterns |
+| [`generated-artifacts.md`](docs/tech/generated-artifacts.md) | Per-file reference for all six generated artifacts (Repository, Dto, RequestDto, Mapper, Controller, SecurityConfigurer) with field inclusion rules and error response table |
+| [`branch-rules.md`](docs/tech/branch-rules.md) | Branch naming convention, commit message format, GitHub branch protection settings, PR merge strategy |
+
+---
+
+## Contributing
+
+Contributions are welcome. Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR — it covers:
+
+- Branch naming and commit convention (`feat/`, `fix/`, `docs/`, etc.)
+- Development setup and how to run tests
+- How to add a new `@ExposeEntity` attribute or generator
+- PR process and what "done" looks like
+
+**Quick links:**
+- 🐛 [Report a bug](https://github.com/notablogger/spring-xpose/issues/new?template=bug_report.yml)
+- ✨ [Request a feature](https://github.com/notablogger/spring-xpose/issues/new?template=feature_request.yml)
+- 💬 [Start a discussion](https://github.com/notablogger/spring-xpose/discussions)
+
+### CI / PR checks
+
+Every PR runs the [`PR Build` workflow](https://github.com/notablogger/spring-xpose/actions/workflows/pr.yml):
+
+1. **Branch name** — must match `type/kebab-case-description`
+2. **PR title** — must follow Conventional Commits (`type(scope): description`)
+3. **Tests** — `./gradlew :processor:test`
+4. **Build check** — all JARs assemble cleanly
+5. **Gate** — all four checks must pass before merge is allowed
 
 ---
 
