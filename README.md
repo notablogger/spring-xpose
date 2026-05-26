@@ -416,10 +416,9 @@ Run tests:
 - [x] Relation-aware DTO serialisation
 - [x] `ignoredFields` — hide entity fields from the API
 - [x] OpenAPI / Swagger UI with auth scheme
-- [ ] GraphQL — compile-time DataFetcher wiring
 - [x] Request DTO — separate request/response shapes with validation annotation propagation
 - [x] Custom mapper — plug in your own Spring bean via `customMapper = YourMapper.class`
-- [ ] DTO projection support (custom response DTO class override)
+- [ ] GraphQL — compile-time DataFetcher wiring
 
 ---
 
