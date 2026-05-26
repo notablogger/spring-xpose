@@ -1,12 +1,7 @@
 name: Publish to Maven Central
 on:
-  push:
-    tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to publish (e.g. 0.3.0)'
-        required: true
+  release:
+    types: [published]
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -26,6 +21,9 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             echo "value=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            echo "value=${tag#v}" >> $GITHUB_OUTPUT
           else
             echo "value=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
           fi
