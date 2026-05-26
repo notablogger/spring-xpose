@@ -3,7 +3,6 @@
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.notablogger/spring-xpose-starter?label=Maven%20Central)](https://central.sonatype.com/search?q=io.github.notablogger)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Build](https://github.com/notablogger/spring-xpose/actions/workflows/ci.yml/badge.svg)](https://github.com/notablogger/spring-xpose/actions/workflows/ci.yml)
-[![PR Build](https://github.com/notablogger/spring-xpose/actions/workflows/pr.yml/badge.svg)](https://github.com/notablogger/spring-xpose/actions/workflows/pr.yml)
 
 > **Annotate your JPA entity once. Get a fully working REST API at compile time.**
 
