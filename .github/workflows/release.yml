@@ -1,7 +1,12 @@
 name: Publish to Maven Central
 on:
-  release:
-    types: [released]
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g. 0.3.0)'
+        required: true
 jobs:
   publish:
     runs-on: ubuntu-latest
