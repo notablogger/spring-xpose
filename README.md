@@ -38,9 +38,9 @@ spring-xpose eliminates steps 1–5 entirely.
 ## Requirements
 
 - Java 21+
-- Spring Boot 3.3.x
+- Spring Boot 4.0.x
 - Spring Data JPA
-- Gradle or Maven
+- Gradle 8.14+ (or Maven)
 
 ---
 
