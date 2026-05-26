@@ -2,12 +2,12 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'signing'
-    id 'io.spring.dependency-management' version '1.1.4'
+    id 'io.spring.dependency-management' version '1.1.7'
     id 'com.gradleup.nmcp' version '0.1.3'
 }
 
 ext {
-    springBootVersion = '3.3.4'
+    springBootVersion = '4.0.6'
 }
 
 dependencyManagement {
@@ -25,10 +25,10 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 
     // MapStruct runtime — needed by the generated *Mapper implementations
-    api 'org.mapstruct:mapstruct:1.5.5.Final'
+    api 'org.mapstruct:mapstruct:1.6.3'
 
     compileOnly 'org.springframework.boot:spring-boot-starter-graphql'
-    compileOnly 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+    compileOnly 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 
     annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
 
