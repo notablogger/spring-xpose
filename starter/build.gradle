@@ -20,9 +20,14 @@ dependencies {
     api project(':annotations')
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+
+    // Spring Data JPA — optional; included when the user adds spring-boot-starter-data-jpa
+    compileOnly 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    // Spring Data MongoDB — optional; included when the user adds spring-boot-starter-data-mongodb
+    compileOnly 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
     // MapStruct runtime — needed by the generated *Mapper implementations
     api 'org.mapstruct:mapstruct:1.6.3'

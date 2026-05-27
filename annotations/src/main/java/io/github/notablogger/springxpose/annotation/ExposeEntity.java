@@ -52,4 +52,14 @@ public @interface ExposeEntity {
      * Defaults to {@code void.class} — use the MapStruct-generated implementation.
      */
     Class<?> customMapper() default void.class;
+
+    /**
+     * Persistence store type. Determines which Spring Data repository base interface
+     * is generated and whether {@code EntityManager} is injected into the controller.
+     * <ul>
+     *   <li>{@link StoreType#JPA}   — generates {@code JpaRepository} (default)</li>
+     *   <li>{@link StoreType#MONGO} — generates {@code MongoRepository}; no {@code EntityManager}</li>
+     * </ul>
+     */
+    StoreType store() default StoreType.JPA;
 }

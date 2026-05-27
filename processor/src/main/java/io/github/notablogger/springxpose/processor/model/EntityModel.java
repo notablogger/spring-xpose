@@ -1,6 +1,7 @@
 package io.github.notablogger.springxpose.processor.model;
 
 import io.github.notablogger.springxpose.annotation.*;
+import io.github.notablogger.springxpose.annotation.StoreType;
 
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;
@@ -32,7 +33,9 @@ public record EntityModel(
     String customMapperClassName,
     boolean pageable,
     /** Name of the {@code @Version} field, or {@code null} if none. */
-    String versionFieldName
+    String versionFieldName,
+    /** Persistence store type — JPA (default) or MONGO. */
+    StoreType storeType
 ) {
     public static EntityModel parse(TypeElement element, ProcessingEnvironment env) {
         ExposeEntity annotation = element.getAnnotation(ExposeEntity.class);
@@ -49,6 +52,8 @@ public record EntityModel(
         // directly throws MirroredTypeException at annotation-processing time)
         String customMapperClassName = resolveCustomMapper(element, env);
 
+        StoreType storeType = annotation.store();
+
         List<FieldModel> fields = new ArrayList<>();
         List<RelationFieldModel> relations = new ArrayList<>();
         String idFieldName = null;
@@ -63,12 +68,24 @@ public record EntityModel(
             String fieldName = field.getSimpleName().toString();
             String fieldType = field.asType().toString();
 
-            boolean isId      = field.getAnnotation(jakarta.persistence.Id.class) != null;
-            boolean isVersion = field.getAnnotation(jakarta.persistence.Version.class) != null;
-            boolean isManyToOne  = field.getAnnotation(jakarta.persistence.ManyToOne.class)  != null;
-            boolean isOneToMany  = field.getAnnotation(jakarta.persistence.OneToMany.class)  != null;
-            boolean isManyToMany = field.getAnnotation(jakarta.persistence.ManyToMany.class) != null;
-            boolean isOneToOne   = field.getAnnotation(jakarta.persistence.OneToOne.class)   != null;
+            // Detect @Id from both JPA and Spring Data (for MongoDB)
+            boolean isId = field.getAnnotation(jakarta.persistence.Id.class) != null
+                        || field.getAnnotation(org.springframework.data.annotation.Id.class) != null;
+            // @Version — JPA only; Mongo uses its own versioning but we don't auto-detect it
+            boolean isVersion = storeType == StoreType.JPA
+                && field.getAnnotation(jakarta.persistence.Version.class) != null;
+
+            // JPA relations (@ManyToOne etc.) — not applicable for MongoDB
+            boolean isManyToOne  = false;
+            boolean isOneToMany  = false;
+            boolean isManyToMany = false;
+            boolean isOneToOne   = false;
+            if (storeType == StoreType.JPA) {
+                isManyToOne  = field.getAnnotation(jakarta.persistence.ManyToOne.class)  != null;
+                isOneToMany  = field.getAnnotation(jakarta.persistence.OneToMany.class)  != null;
+                isManyToMany = field.getAnnotation(jakarta.persistence.ManyToMany.class) != null;
+                isOneToOne   = field.getAnnotation(jakarta.persistence.OneToOne.class)   != null;
+            }
 
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
             if (isVersion) { versionFieldName = fieldName; }
@@ -88,7 +105,9 @@ public record EntityModel(
 
         if (idFieldName == null) {
             env.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                "@ExposeEntity: no @Id field found on " + element.getSimpleName(), element);
+                "@ExposeEntity: no @Id field found on " + element.getSimpleName()
+                + " — annotate the ID field with @jakarta.persistence.Id (JPA) or "
+                + "@org.springframework.data.annotation.Id (MongoDB)", element);
             return null;
         }
 
@@ -106,7 +125,8 @@ public record EntityModel(
             roles, readRoles, writeRoles, ignoredFields,
             customMapperClassName,
             annotation.pageable(),
-            versionFieldName
+            versionFieldName,
+            storeType
         );
     }
 

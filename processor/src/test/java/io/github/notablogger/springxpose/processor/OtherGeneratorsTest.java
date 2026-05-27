@@ -59,6 +59,32 @@ class OtherGeneratorsTest {
         return javac().withProcessors(new ExposeEntityProcessor()).compile(CATEGORY, BOOK);
     }
 
+    private static final javax.tools.JavaFileObject NOTE_MONGO = JavaFileObjects.forSourceString(
+        "com.example.entity.Note",
+        """
+        package com.example.entity;
+        import io.github.notablogger.springxpose.annotation.*;
+        import jakarta.validation.constraints.NotBlank;
+        import org.springframework.data.annotation.Id;
+        import org.springframework.data.mongodb.core.mapping.Document;
+
+        @Document(collection = "notes")
+        @ExposeEntity(path = "notes", store = StoreType.MONGO)
+        public class Note {
+            @Id private String id;
+            @NotBlank private String title;
+            private String content;
+
+            public String getId() { return id; }
+            public void setId(String id) { this.id = id; }
+            public String getTitle() { return title; }
+            public void setTitle(String title) { this.title = title; }
+            public String getContent() { return content; }
+            public void setContent(String content) { this.content = content; }
+        }
+        """
+    );
+
     @Test
     void repositoryGenerator_extendsJpaRepositoryWithEntityAndId() throws Exception {
         Compilation c = compileBook();
@@ -106,6 +132,25 @@ class OtherGeneratorsTest {
         assertTrue(mapper.contains("source = \"category.id\""),
             "Mapper should map relation object to categoryId");
         assertTrue(mapper.contains("void updateEntity"), "Mapper should generate updateEntity method");
+    }
+
+    @Test
+    void mongoStore_generatesMongoRepositoryAndNonTransactionalController() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(NOTE_MONGO);
+
+        assertThat(c).succeeded();
+
+        String repo = c.generatedSourceFile("com.example.entity.generated.NoteRepository")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(repo.contains("extends MongoRepository<Note, String>"),
+            "Mongo entities should generate MongoRepository with String id");
+
+        String controller = c.generatedSourceFile("com.example.entity.generated.NoteController")
+            .orElseThrow().getCharContent(false).toString();
+        assertFalse(controller.contains("EntityManager"),
+            "Mongo controllers should not inject EntityManager");
+        assertFalse(controller.contains("@Transactional"),
+            "Mongo write operations should not be annotated @Transactional");
     }
 }
 

@@ -2,6 +2,7 @@ package io.github.notablogger.springxpose.processor.generator;
 
 import com.squareup.javapoet.*;
 import io.github.notablogger.springxpose.annotation.Operation;
+import io.github.notablogger.springxpose.annotation.StoreType;
 import io.github.notablogger.springxpose.processor.model.EntityModel;
 import io.github.notablogger.springxpose.processor.model.RelationFieldModel;
 
@@ -44,6 +45,11 @@ public class RestControllerGenerator {
         boolean hasRelations = model.relations().stream()
             .anyMatch(r -> "SINGLE".equals(r.relationType()) && !model.ignoredFields().contains(r.name()));
 
+        // EntityManager is only needed for JPA entities that have write ops with relations
+        boolean needsEntityManager = model.storeType() == StoreType.JPA
+            && hasWriteOps
+            && hasRelations;
+
         String entity = model.entitySimpleName();
 
         TypeSpec.Builder controller = TypeSpec.classBuilder(entity + "Controller")
@@ -78,13 +84,12 @@ public class RestControllerGenerator {
             .addStatement("this.repository = repository")
             .addStatement("this.mapper     = mapper");
 
-        if (hasWriteOps && hasRelations) {
+        if (needsEntityManager) {
             controller.addField(
                 FieldSpec.builder(entityManager, "entityManager", Modifier.PRIVATE, Modifier.FINAL).build());
             ctor.addParameter(entityManager, "entityManager")
                 .addStatement("this.entityManager = entityManager");
-        }
-        controller.addMethod(ctor.build());
+        }        controller.addMethod(ctor.build());
 
         // ── FIND_ALL ──
         if (model.operations().contains(Operation.FIND_ALL)) {
@@ -187,7 +192,6 @@ public class RestControllerGenerator {
                     .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
                         OA_API_RESPONSE, "201", "Created", OA_API_RESPONSE, "400", "Validation error")
                     .build())
-                .addAnnotation(transactional)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
                 .addParameter(ParameterSpec.builder(requestDtoClass, "requestDto")
@@ -199,7 +203,14 @@ public class RestControllerGenerator {
                     .build())
                 .addStatement("$T entity = mapper.toEntity(requestDto)", entityClass);
 
-            addRelationResolution(create, model, entityManager);
+            // @Transactional is JPA-specific — Mongo uses auto-commit per operation
+            if (model.storeType() == StoreType.JPA) {
+                create.addAnnotation(transactional);
+            }
+
+            if (needsEntityManager) {
+                addRelationResolution(create, model, entityManager);
+            }
             create.addStatement("return $T.status($T.CREATED).body(mapper.toDto(repository.save(entity)))",
                 responseEntity, httpStatus);
             controller.addMethod(create.build());
@@ -221,7 +232,6 @@ public class RestControllerGenerator {
                         OA_API_RESPONSE, "400", "Validation error",
                         OA_API_RESPONSE, "404", "Not found")
                     .build())
-                .addAnnotation(transactional)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
                 .addParameter(ParameterSpec.builder(idClass, "id")
@@ -245,7 +255,14 @@ public class RestControllerGenerator {
                 // Merge only the fields present in requestDto into the loaded entity
                 .addStatement("mapper.updateEntity(requestDto, entity)");
 
-            addRelationResolution(update, model, entityManager);
+            // @Transactional is JPA-specific — Mongo uses auto-commit per operation
+            if (model.storeType() == StoreType.JPA) {
+                update.addAnnotation(transactional);
+            }
+
+            if (needsEntityManager) {
+                addRelationResolution(update, model, entityManager);
+            }
             update.addStatement("return $T.ok(mapper.toDto(repository.save(entity)))", responseEntity);
             controller.addMethod(update.build());
         }
@@ -253,7 +270,7 @@ public class RestControllerGenerator {
         // ── DELETE ──
         if (model.operations().contains(Operation.DELETE)) {
             TypeName returnType = ParameterizedTypeName.get(responseEntity, ClassName.get(Void.class));
-            controller.addMethod(MethodSpec.methodBuilder("delete")
+            MethodSpec.Builder delete = MethodSpec.methodBuilder("delete")
                 .addAnnotation(AnnotationSpec.builder(ClassName.get("org.springframework.web.bind.annotation", "DeleteMapping"))
                     .addMember("value", "$S", "/{id}").build())
                 .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
@@ -264,7 +281,6 @@ public class RestControllerGenerator {
                     .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
                         OA_API_RESPONSE, "204", "Deleted", OA_API_RESPONSE, "404", "Not found")
                     .build())
-                .addAnnotation(transactional)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
                 .addParameter(ParameterSpec.builder(idClass, "id")
@@ -277,8 +293,13 @@ public class RestControllerGenerator {
                 .addStatement("return $T.notFound().build()", responseEntity)
                 .endControlFlow()
                 .addStatement("repository.deleteById(id)")
-                .addStatement("return $T.noContent().build()", responseEntity)
-                .build());
+                .addStatement("return $T.noContent().build()", responseEntity);
+
+            // @Transactional is JPA-specific
+            if (model.storeType() == StoreType.JPA) {
+                delete.addAnnotation(transactional);
+            }
+            controller.addMethod(delete.build());
         }
 
         try {
