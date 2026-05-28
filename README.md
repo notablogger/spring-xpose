@@ -206,6 +206,7 @@ public class Order { ... }
 |---|---|---|
 | `path` | entity name pluralised | URL segment — `"products"` → `/api/products` |
 | `expose` | all five operations | Which HTTP operations to generate |
+| `store` | `StoreType.JPA` | Persistence type: `JPA` (Spring Data JPA) or `MONGO` (Spring Data MongoDB) |
 | `authType` | `NONE` | `NONE`, `BASIC`, or `OAUTH2` |
 | `readRoles` / `writeRoles` | `{}` | Role-based access split |
 | `ignoredFields` | `{}` | Fields excluded from both response and request DTOs |
@@ -305,6 +306,8 @@ Run tests:
 ## Roadmap
 
 - [x] REST — compile-time controller + DTO + mapper generation
+- [x] JPA support (Spring Data JPA)
+- [x] MongoDB support (Spring Data MongoDB, `store = StoreType.MONGO`)
 - [x] Per-entity security (NONE / BASIC / OAUTH2)
 - [x] Relation-aware DTO serialisation
 - [x] `ignoredFields` — hide entity fields from the API

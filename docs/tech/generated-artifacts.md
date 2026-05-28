@@ -5,7 +5,7 @@ For every class annotated with `@ExposeEntity`, spring-xpose writes **six `.java
 ```
 build/generated/sources/annotationProcessor/java/main/
 └── <entity-package>.generated/
-    ├── <Entity>Repository.java
+    ├── <Entity>Repository.java           (JpaRepository or MongoRepository based on store type)
     ├── <Entity>Dto.java
     ├── <Entity>RequestDto.java
     ├── <Entity>Mapper.java
@@ -14,6 +14,8 @@ build/generated/sources/annotationProcessor/java/main/
 ```
 
 These are real, readable source files — open them in your IDE, set breakpoints, and read them like any other class. They are **not** to be edited by hand; they are regenerated on every build.
+
+**Note:** For MongoDB entities (when `store = StoreType.MONGO`), use `@org.springframework.data.annotation.Id` instead of `@jakarta.persistence.Id`.
 
 ---
 

@@ -48,7 +48,41 @@ public class Order { ... }
 
 ---
 
-## `authType` — Authentication
+## `store` — Persistence Store Type
+
+Controls which Spring Data repository base interface is generated and how relations/transactions are handled.
+
+| Value | Repository | EntityManager | @Transactional | Use Case |
+|---|---|---|---|---|
+| `StoreType.JPA` (default) | `JpaRepository<Entity, Id>` | ✅ injected for relation resolution | ✅ on write operations | Traditional SQL databases (Postgres, MySQL, etc.) |
+| `StoreType.MONGO` | `MongoRepository<Entity, Id>` | ❌ not injected | ❌ not emitted | MongoDB / NoSQL document stores |
+
+**Example — MongoDB entity:**
+
+```java
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+
+@Document(collection = "notes")
+@ExposeEntity(path = "notes", store = StoreType.MONGO)
+public class Note {
+    @Id                   // Use @org.springframework.data.annotation.Id for MongoDB
+    private String id;
+    
+    @NotBlank
+    private String title;
+    
+    private String content;
+}
+```
+
+When `store = StoreType.MONGO`:
+- Generated repository extends `MongoRepository<Note, String>` instead of `JpaRepository`
+- Generated controller **does not** inject `EntityManager`
+- Generated controller **does not** emit `@Transactional` on write methods
+- Relation resolution through `EntityManager` is skipped (N/A for document stores)
+
+---
 
 | Value | Generated security | Swagger UI |
 |---|---|---|
