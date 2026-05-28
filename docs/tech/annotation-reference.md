@@ -83,6 +83,8 @@ When `store = StoreType.MONGO`:
 - Generated controller **does not** emit `@Transactional` on write methods
 - Relation resolution through `EntityManager` is skipped (N/A for document stores)
 
+> **Future expansion:** Other NoSQL databases (DynamoDB, Cassandra, Elasticsearch, etc.) may be supported in future versions. Each would require its own `StoreType` value and tailored code generation, as they have different query models and key semantics.
+
 ---
 
 ## `authType` — Authentication
