@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import static com.google.testing.compile.CompilationSubject.assertThat;
 import static com.google.testing.compile.Compiler.javac;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SecurityConfigurerGeneratorTest {
@@ -86,5 +87,22 @@ class SecurityConfigurerGeneratorTest {
             "Expected USER role or hasAnyRole in: " + src);
         assertTrue(src.contains("ADMIN") || src.contains("hasAnyRole"),
             "Expected ADMIN role or hasAnyRole in: " + src);
+    }
+
+    @Test
+    void deleteNotExposed_noDeleteSecurityMatcherGenerated() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith(
+                "@ExposeEntity(path=\"books\", authType=AuthType.BASIC, expose={Operation.FIND_ALL, Operation.FIND_BY_ID, Operation.CREATE, Operation.UPDATE}, readRoles={\"USER\"}, writeRoles={\"ADMIN\"})"),
+                REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookSecurityConfigurer")
+            .orElseThrow(() -> new AssertionError("BookSecurityConfigurer not generated"))
+            .getCharContent(false)
+            .toString();
+
+        assertFalse(src.contains("HttpMethod.DELETE"),
+            "DELETE matcher should not be generated when Operation.DELETE is not exposed: " + src);
     }
 }
