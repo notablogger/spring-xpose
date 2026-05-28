@@ -84,6 +84,8 @@ When `store = StoreType.MONGO`:
 
 ---
 
+## `authType` — Authentication
+
 | Value | Generated security | Swagger UI |
 |---|---|---|
 | `NONE` | `permitAll()` — fully public | No lock |
