@@ -4,9 +4,9 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Build](https://github.com/notablogger/spring-xpose/actions/workflows/ci.yml/badge.svg)](https://github.com/notablogger/spring-xpose/actions/workflows/ci.yml)
 
-> **Annotate your JPA entity once. Get a fully working REST API at compile time.**
+> **Annotate your JPA entity or MongoDB document once. Get a fully working REST API at compile time.**
 
-spring-xpose reads `@ExposeEntity` on your JPA entity at compile time and generates — as real, readable `.java` files — a Spring Data repository, a DTO, a MapStruct mapper, a `@RestController` with full OpenAPI documentation, and a `SecurityFilterChain` scoped to that entity's path. No runtime magic, no reflection, no proxies. Just generated code you can open, read, and debug.
+spring-xpose reads `@ExposeEntity` on your JPA entity (or `@ExposeDocument` on your MongoDB document) at compile time and generates — as real, readable `.java` files — a Spring Data repository, a DTO, a MapStruct mapper, a `@RestController` with full OpenAPI documentation, and a `SecurityFilterChain` scoped to that entity's path. No runtime magic, no reflection, no proxies. Just generated code you can open, read, and debug.
 
 ---
 
@@ -52,9 +52,9 @@ spring-xpose follows the same pattern as **Lombok** and **MapStruct** — a few 
 
 ```groovy
 dependencies {
-    implementation 'io.github.notablogger:spring-xpose-starter:0.1.5'
-    annotationProcessor 'io.github.notablogger:spring-xpose-processor:0.1.5'
-    compileOnly 'io.github.notablogger:spring-xpose-annotations:0.1.5'
+    implementation 'io.github.notablogger:spring-xpose-starter:3.0.0'
+    annotationProcessor 'io.github.notablogger:spring-xpose-processor:3.0.0'
+    compileOnly 'io.github.notablogger:spring-xpose-annotations:3.0.0'
     annotationProcessor 'jakarta.persistence:jakarta.persistence-api:3.1.0'
     annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
 }
@@ -64,9 +64,9 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.notablogger:spring-xpose-starter:0.1.5")
-    annotationProcessor("io.github.notablogger:spring-xpose-processor:0.1.5")
-    compileOnly("io.github.notablogger:spring-xpose-annotations:0.1.5")
+    implementation("io.github.notablogger:spring-xpose-starter:3.0.0")
+    annotationProcessor("io.github.notablogger:spring-xpose-processor:3.0.0")
+    compileOnly("io.github.notablogger:spring-xpose-annotations:3.0.0")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api:3.1.0")
     annotationProcessor("org.mapstruct:mapstruct-processor:1.5.5.Final")
 }
@@ -79,12 +79,12 @@ dependencies {
     <dependency>
         <groupId>io.github.notablogger</groupId>
         <artifactId>spring-xpose-starter</artifactId>
-        <version>0.1.5</version>
+        <version>3.0.0</version>
     </dependency>
     <dependency>
         <groupId>io.github.notablogger</groupId>
         <artifactId>spring-xpose-annotations</artifactId>
-        <version>0.1.5</version>
+        <version>3.0.0</version>
         <scope>provided</scope>
     </dependency>
 </dependencies>
@@ -99,7 +99,7 @@ dependencies {
                     <path>
                         <groupId>io.github.notablogger</groupId>
                         <artifactId>spring-xpose-processor</artifactId>
-                        <version>0.1.5</version>
+                        <version>3.0.0</version>
                     </path>
                     <path>
                         <groupId>jakarta.persistence</groupId>
@@ -186,8 +186,16 @@ These are real `.java` files — open them in your IDE, set breakpoints, read th
 
 ---
 
-## `@ExposeEntity` — Quick Reference
+## `@ExposeEntity` + `@ExposeDocument` — Quick Reference
 
+spring-xpose provides two complementary annotations:
+
+| Annotation | Use for | Persistence |
+|---|---|---|
+| `@ExposeEntity` | JPA entity classes (`@Entity`) | always JPA |
+| `@ExposeDocument` | MongoDB document classes (`@Document`) | always MongoDB |
+
+**JPA entity (SQL):**
 ```java
 @Entity
 @ExposeEntity(
@@ -202,17 +210,32 @@ These are real `.java` files — open them in your IDE, set breakpoints, read th
 public class Order { ... }
 ```
 
+**MongoDB document:**
+```java
+@Document(collection = "notes")
+@ExposeDocument(
+    path       = "notes",
+    authType   = AuthType.BASIC,
+    readRoles  = {"CUSTOMER", "ADMIN"},
+    writeRoles = {"ADMIN"}
+)
+public class Note {
+    @Id private String id;  // @org.springframework.data.annotation.Id
+    @NotBlank private String title;
+}
+```
+
 | Attribute | Default | Description |
 |---|---|---|
 | `path` | entity name pluralised | URL segment — `"products"` → `/api/products` |
 | `expose` | all five operations | Which HTTP operations to generate |
-| `store` | `StoreType.JPA` | Persistence type: `JPA` (Spring Data JPA) or `MONGO` (Spring Data MongoDB) |
 | `authType` | `NONE` | `NONE`, `BASIC`, or `OAUTH2` |
 | `readRoles` / `writeRoles` | `{}` | Role-based access split |
 | `ignoredFields` | `{}` | Fields excluded from both response and request DTOs |
 | `customMapper` | `void.class` | Bring your own Spring bean mapper |
+| `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | `@ExposeEntity` only — how related entities appear in the DTO |
 
-→ Full attribute reference, operation table, relation modes, request DTO rules, and custom mapper guide: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
+→ Full attribute reference, operation table, auth types, `@ExposeDocument` guide, relation modes, request DTO rules, and custom mapper guide: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
 
 ---
 
@@ -234,7 +257,7 @@ All generated controllers are annotated with `@Tag`, `@Operation`, and `@ApiResp
 
 | Module | Artifact | Scope | Purpose |
 |---|---|---|---|
-| `annotations` | `spring-xpose-annotations` | `compileOnly` | `@ExposeEntity` and supporting enums |
+| `annotations` | `spring-xpose-annotations` | `compileOnly` | `@ExposeEntity`, `@ExposeDocument`, and supporting enums |
 | `processor` | `spring-xpose-processor` | `annotationProcessor` | APT — generates DTO, mapper, controller, repository, security configurer |
 | `starter` | `spring-xpose-starter` | `implementation` | Spring Boot autoconfiguration, MapStruct runtime, `RelationAwareSerializer` |
 
@@ -252,7 +275,7 @@ Technical docs live under [`docs/tech/`](docs/tech/):
 
 | Document | What's in it |
 |---|---|
-| [`annotation-reference.md`](docs/tech/annotation-reference.md) | Full `@ExposeEntity` attribute reference, all operations, auth types, relation modes, request DTO rules, custom mapper guide |
+| [`annotation-reference.md`](docs/tech/annotation-reference.md) | Full `@ExposeEntity` and `@ExposeDocument` attribute reference, all operations, auth types, relation modes, request DTO rules, custom mapper guide |
 | [`configuration.md`](docs/tech/configuration.md) | All `spring-xpose.*` properties, Swagger UI setup |
 | [`architecture.md`](docs/tech/architecture.md) | Module layout, compile-time data-flow diagram, full Mermaid class diagram, runtime request lifecycle, security filter chain design, key design decisions |
 | [`generator-guide.md`](docs/tech/generator-guide.md) | How the APT pipeline works, per-generator responsibilities, step-by-step guide for adding a new generator or `@ExposeEntity` attribute, testing patterns |
@@ -306,8 +329,8 @@ Run tests:
 ## Roadmap
 
 - [x] REST — compile-time controller + DTO + mapper generation
-- [x] JPA support (Spring Data JPA)
-- [x] MongoDB support (Spring Data MongoDB, `store = StoreType.MONGO`)
+- [x] JPA support (Spring Data JPA) via `@ExposeEntity`
+- [x] MongoDB support via `@ExposeDocument` (MongoDB-native, no JPA terminology)
 - [x] Per-entity security (NONE / BASIC / OAUTH2)
 - [x] Relation-aware DTO serialisation
 - [x] `ignoredFields` — hide entity fields from the API

@@ -1,11 +1,11 @@
 # Generated Artifacts — spring-xpose
 
-For every class annotated with `@ExposeEntity`, spring-xpose writes **six `.java` files** into:
+For every class annotated with `@ExposeEntity` or `@ExposeDocument`, spring-xpose writes **six `.java` files** into:
 
 ```
 build/generated/sources/annotationProcessor/java/main/
 └── <entity-package>.generated/
-    ├── <Entity>Repository.java           (JpaRepository or MongoRepository based on store type)
+    ├── <Entity>Repository.java           (JpaRepository for @ExposeEntity, MongoRepository for @ExposeDocument)
     ├── <Entity>Dto.java
     ├── <Entity>RequestDto.java
     ├── <Entity>Mapper.java
@@ -15,7 +15,7 @@ build/generated/sources/annotationProcessor/java/main/
 
 These are real, readable source files — open them in your IDE, set breakpoints, and read them like any other class. They are **not** to be edited by hand; they are regenerated on every build.
 
-**Note:** For MongoDB entities (when `store = StoreType.MONGO`), use `@org.springframework.data.annotation.Id` instead of `@jakarta.persistence.Id`.
+**Note:** For MongoDB documents (`@ExposeDocument`), annotate the ID field with `@org.springframework.data.annotation.Id`. For JPA entities (`@ExposeEntity`), use `@jakarta.persistence.Id`.
 
 ---
 

@@ -486,4 +486,149 @@ class ExposeEntityProcessorTest {
         assertTrue(mapper.contains("updateEntity"), "Mapper must have updateEntity method for safe PUT merge");
         assertTrue(mapper.contains("MappingTarget"), "updateEntity must use @MappingTarget");
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // @ExposeDocument tests
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private static final javax.tools.JavaFileObject NOTE_DOCUMENT_SOURCE =
+        JavaFileObjects.forSourceString("com.example.document.Note",
+            """
+            package com.example.document;
+            import io.github.notablogger.springxpose.annotation.ExposeDocument;
+            import org.springframework.data.annotation.Id;
+            import org.springframework.data.mongodb.core.mapping.Document;
+            @Document(collection = "notes")
+            @ExposeDocument(path = "notes")
+            public class Note {
+                @Id private String id;
+                private String title;
+                private String content;
+                public String getId()              { return id; }
+                public void   setId(String id)     { this.id = id; }
+                public String getTitle()           { return title; }
+                public void   setTitle(String t)   { this.title = t; }
+                public String getContent()         { return content; }
+                public void   setContent(String c) { this.content = c; }
+            }
+            """
+        );
+
+    @Test
+    void exposeDocument_generatesAllSixArtifacts() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(NOTE_DOCUMENT_SOURCE);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.document.generated.NoteRepository");
+        assertThat(c).generatedSourceFile("com.example.document.generated.NoteDto");
+        assertThat(c).generatedSourceFile("com.example.document.generated.NoteRequestDto");
+        assertThat(c).generatedSourceFile("com.example.document.generated.NoteMapper");
+        assertThat(c).generatedSourceFile("com.example.document.generated.NoteController");
+        assertThat(c).generatedSourceFile("com.example.document.generated.NoteSecurityConfigurer");
+    }
+
+    @Test
+    void exposeDocument_repositoryExtendsMongoRepository() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(NOTE_DOCUMENT_SOURCE);
+
+        assertThat(c).succeeded();
+        String repo = c.generatedSourceFile("com.example.document.generated.NoteRepository")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(repo.contains("MongoRepository"), "Repository must extend MongoRepository for @ExposeDocument");
+        assertFalse(repo.contains("JpaRepository"),  "Repository must NOT extend JpaRepository for @ExposeDocument");
+    }
+
+    @Test
+    void exposeDocument_controllerHasNoEntityManager() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(NOTE_DOCUMENT_SOURCE);
+
+        assertThat(c).succeeded();
+        String ctrl = c.generatedSourceFile("com.example.document.generated.NoteController")
+            .orElseThrow().getCharContent(false).toString();
+        assertFalse(ctrl.contains("EntityManager"),
+            "Controller must NOT inject EntityManager for @ExposeDocument (no JPA)");
+    }
+
+    @Test
+    void exposeDocument_controllerHasNoTransactional() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(NOTE_DOCUMENT_SOURCE);
+
+        assertThat(c).succeeded();
+        String ctrl = c.generatedSourceFile("com.example.document.generated.NoteController")
+            .orElseThrow().getCharContent(false).toString();
+        assertFalse(ctrl.contains("@Transactional"),
+            "Controller must NOT emit @Transactional for @ExposeDocument (MongoDB is auto-commit)");
+    }
+
+    @Test
+    void exposeDocument_dtoContainsScalarFields() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(NOTE_DOCUMENT_SOURCE);
+
+        assertThat(c).succeeded();
+        String dto = c.generatedSourceFile("com.example.document.generated.NoteDto")
+            .orElseThrow().getCharContent(false).toString();
+        assertTrue(dto.contains("title"),   "Dto must contain 'title'");
+        assertTrue(dto.contains("content"), "Dto must contain 'content'");
+    }
+
+    @Test
+    void exposeDocument_failsWhenNoIdField() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.document.NoIdDoc",
+                """
+                package com.example.document;
+                import io.github.notablogger.springxpose.annotation.ExposeDocument;
+                import org.springframework.data.mongodb.core.mapping.Document;
+                @Document(collection = "noids")
+                @ExposeDocument(path = "noids")
+                public class NoIdDoc {
+                    private String name;
+                    public String getName() { return name; }
+                    public void setName(String n) { this.name = n; }
+                }
+                """
+            )
+        );
+        assertFalse(c.status() == Compilation.Status.SUCCESS,
+            "Should fail: @ExposeDocument on a class with no @Id field");
+        assertTrue(
+            c.diagnostics().stream().anyMatch(d ->
+                d.getKind() == Diagnostic.Kind.ERROR &&
+                d.getMessage(null).contains("@ExposeDocument: no @Id field found")),
+            "Expected @ExposeDocument no @Id error not found");
+    }
+
+    @Test
+    void exposeDocument_warnsWhenUsedWithJpaEntityAnnotation() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.entity.ConfusedEntity",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.ExposeDocument;
+                import jakarta.persistence.*;
+                @Entity
+                @ExposeDocument(path = "confused")
+                public class ConfusedEntity {
+                    @Id @GeneratedValue private Long id;
+                    private String name;
+                    public Long getId()           { return id; }
+                    public void setId(Long id)    { this.id = id; }
+                    public String getName()       { return name; }
+                    public void setName(String n) { this.name = n; }
+                }
+                """
+            )
+        );
+        // Compilation may still succeed (it just generates for MONGO) but must warn
+        assertTrue(
+            c.diagnostics().stream().anyMatch(d ->
+                d.getKind() == Diagnostic.Kind.WARNING &&
+                d.getMessage(null).contains("@ExposeDocument is intended for MongoDB documents")),
+            "Expected WARNING about @ExposeDocument on a JPA @Entity not found");
+    }
 }

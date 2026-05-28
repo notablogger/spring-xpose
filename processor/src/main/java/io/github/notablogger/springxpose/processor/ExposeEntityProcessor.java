@@ -1,6 +1,7 @@
 package io.github.notablogger.springxpose.processor;
 
 import com.google.auto.service.AutoService;
+import io.github.notablogger.springxpose.annotation.ExposeDocument;
 import io.github.notablogger.springxpose.annotation.ExposeEntity;
 import io.github.notablogger.springxpose.processor.generator.DtoGenerator;
 import io.github.notablogger.springxpose.processor.generator.MapperGenerator;
@@ -15,16 +16,25 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
-@SupportedAnnotationTypes("io.github.notablogger.springxpose.annotation.ExposeEntity")
+@SupportedAnnotationTypes({
+    "io.github.notablogger.springxpose.annotation.ExposeEntity",
+    "io.github.notablogger.springxpose.annotation.ExposeDocument"
+})
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 @AutoService(Processor.class)
 public class ExposeEntityProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-        for (Element element : roundEnv.getElementsAnnotatedWith(ExposeEntity.class)) {
+        // Collect elements from both @ExposeEntity and @ExposeDocument
+        Set<Element> allElements = new LinkedHashSet<>();
+        allElements.addAll(roundEnv.getElementsAnnotatedWith(ExposeEntity.class));
+        allElements.addAll(roundEnv.getElementsAnnotatedWith(ExposeDocument.class));
+
+        for (Element element : allElements) {
             if (element.getKind() != ElementKind.CLASS) continue;
 
             TypeElement entityClass = (TypeElement) element;

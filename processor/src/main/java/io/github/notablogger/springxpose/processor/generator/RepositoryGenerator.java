@@ -9,10 +9,16 @@ import javax.lang.model.element.Modifier;
 import java.io.IOException;
 
 /**
- * Generates a Spring Data {@code JpaRepository} interface for each
- * {@code @ExposeEntity}-annotated class, so users don't have to write it manually.
+ * Generates a Spring Data repository interface for each
+ * {@code @ExposeEntity}- or {@code @ExposeDocument}-annotated class.
  *
- * <p>Generated output example for {@code Product} with {@code Long} id:
+ * <ul>
+ *   <li>{@code StoreType.JPA}   → {@code JpaRepository<Entity, Id>}</li>
+ *   <li>{@code StoreType.MONGO} → {@code MongoRepository<Entity, Id>}
+ *       (used automatically when class carries {@code @ExposeDocument})</li>
+ * </ul>
+ *
+ * <p>Generated output example for {@code Product} (JPA, {@code Long} id):
  * <pre>
  * package com.example.entity.generated;
  *

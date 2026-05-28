@@ -1,12 +1,23 @@
-# `@ExposeEntity` Reference — spring-xpose
+# Annotation Reference — spring-xpose
 
-## Full example
+spring-xpose provides **two complementary annotations** for compile-time REST API generation:
+
+| Annotation | Target | Persistence | Use when |
+|---|---|---|---|
+| `@ExposeEntity` | JPA entity class (`@Entity`) | always JPA | SQL databases — Postgres, MySQL, H2, … |
+| `@ExposeDocument` | MongoDB document class (`@Document`) | always MongoDB | MongoDB document collections |
+
+The annotation you choose determines the persistence backend — there is no `store` parameter to set.
+`@ExposeDocument` additionally omits the JPA-specific `relationMode` attribute (MongoDB documents do not have JPA relations).
+
+---
+
+## `@ExposeEntity` — Full example
 
 ```java
 @Entity
 @ExposeEntity(
     path          = "orders",
-    store         = StoreType.JPA,        // JPA (default) or MONGO
     expose        = {Operation.FIND_ALL, Operation.FIND_BY_ID,
                      Operation.CREATE, Operation.UPDATE, Operation.DELETE},
     relationMode  = RelationMode.IDS_FOR_LIST_OBJECT_FOR_SINGLE,
@@ -19,21 +30,66 @@
 public class Order { ... }
 ```
 
+## `@ExposeDocument` — Full example
+
+```java
+@Document(collection = "notes")
+@ExposeDocument(
+    path          = "notes",
+    expose        = {Operation.FIND_ALL, Operation.FIND_BY_ID,
+                     Operation.CREATE, Operation.UPDATE, Operation.DELETE},
+    authType      = AuthType.BASIC,
+    readRoles     = {"CUSTOMER", "ADMIN"},
+    writeRoles    = {"ADMIN"},
+    ignoredFields = {"internalTag"},
+    customMapper  = MyNoteMapper.class    // optional
+)
+public class Note {
+    @Id   // @org.springframework.data.annotation.Id
+    private String id;
+    @NotBlank private String title;
+    private String content;
+}
+```
+
 ---
 
 ## Attributes
+
+### Shared attributes (`@ExposeEntity` and `@ExposeDocument`)
 
 | Attribute | Type | Default | Description |
 |---|---|---|---|
 | `path` | `String` | entity name pluralised | URL segment — `"products"` → `/api/products` |
 | `expose` | `Operation[]` | all five | Which HTTP operations to generate |
-| `relationMode` | `RelationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | How related entities appear in the **response** DTO |
 | `authType` | `AuthType` | `NONE` | Authentication mechanism |
 | `roles` | `String[]` | `{}` | Roles required for all operations |
 | `readRoles` | `String[]` | `{}` | Roles for GET requests (overrides `roles`) |
 | `writeRoles` | `String[]` | `{}` | Roles for POST/PUT/DELETE (overrides `roles`) |
 | `ignoredFields` | `String[]` | `{}` | Fields excluded from **both** the response DTO and the request DTO |
+| `pageable` | `boolean` | `false` | When `true`, `findAll` accepts `Pageable` and returns `Page<Dto>` |
 | `customMapper` | `Class<?>` | `void.class` | Optional custom Spring bean to use instead of the MapStruct-generated mapper |
+
+### `@ExposeEntity`-only attributes
+
+| Attribute | Type | Default | Description |
+|---|---|---|---|
+| `relationMode` | `RelationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | How related entities appear in the **response** DTO |
+
+---
+
+## Persistence behaviour by annotation
+
+| | `@ExposeEntity` | `@ExposeDocument` |
+|---|---|---|
+| Generated repository | `JpaRepository<Entity, Id>` | `MongoRepository<Entity, Id>` |
+| `EntityManager` | ✅ injected for relation resolution | ❌ not injected |
+| `@Transactional` on write methods | ✅ emitted | ❌ not emitted |
+| JPA relation resolution | ✅ via `EntityManager.getReference()` | ❌ N/A |
+| `@jakarta.persistence.Id` | ✅ supported | ✅ supported |
+| `@org.springframework.data.annotation.Id` | ✅ supported | ✅ supported |
+
+> **Future expansion:** Other NoSQL databases (DynamoDB, Cassandra, Elasticsearch, etc.) may be supported in future versions via a dedicated annotation.
 
 ---
 
@@ -46,44 +102,6 @@ public class Order { ... }
 | `CREATE` | `POST` | `/api/{path}` | `201 Created` — `@RequestBody` is `EntityRequestDto` |
 | `UPDATE` | `PUT` | `/api/{path}/{id}` | `200 OK` / `404 Not Found` — `@RequestBody` is `EntityRequestDto` |
 | `DELETE` | `DELETE` | `/api/{path}/{id}` | `204 No Content` / `404 Not Found` |
-
----
-
-## `store` — Persistence Store Type
-
-Controls which Spring Data repository base interface is generated and how relations/transactions are handled.
-
-| Value | Repository | EntityManager | @Transactional | Use Case |
-|---|---|---|---|---|
-| `StoreType.JPA` (default) | `JpaRepository<Entity, Id>` | ✅ injected for relation resolution | ✅ on write operations | Traditional SQL databases (Postgres, MySQL, etc.) |
-| `StoreType.MONGO` | `MongoRepository<Entity, Id>` | ❌ not injected | ❌ not emitted | MongoDB / NoSQL document stores |
-
-**Example — MongoDB entity:**
-
-```java
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-
-@Document(collection = "notes")
-@ExposeEntity(path = "notes", store = StoreType.MONGO)
-public class Note {
-    @Id                   // Use @org.springframework.data.annotation.Id for MongoDB
-    private String id;
-    
-    @NotBlank
-    private String title;
-    
-    private String content;
-}
-```
-
-When `store = StoreType.MONGO`:
-- Generated repository extends `MongoRepository<Note, String>` instead of `JpaRepository`
-- Generated controller **does not** inject `EntityManager`
-- Generated controller **does not** emit `@Transactional` on write methods
-- Relation resolution through `EntityManager` is skipped (N/A for document stores)
-
-> **Future expansion:** Other NoSQL databases (DynamoDB, Cassandra, Elasticsearch, etc.) may be supported in future versions. Each would require its own `StoreType` value and tailored code generation, as they have different query models and key semantics.
 
 ---
 

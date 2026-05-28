@@ -1,6 +1,6 @@
 # Architecture — spring-xpose
 
-spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes and writes six `.java` source files per entity into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
+spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes **or `@ExposeDocument` on MongoDB document classes** and writes six `.java` source files per annotated class into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
 
 ---
 
@@ -33,15 +33,16 @@ annotations  ←  processor  ←  (user's app at compile time)
 ┌─────────────────────────────────────────────────────────────┐
 │  javac / Gradle annotation-processing round                  │
 │                                                              │
-│  @Entity @ExposeEntity(...)                                  │
-│  class Product { ... }                                       │
-│          │                                                   │
-│          ▼                                                   │
+│  @Entity @ExposeEntity(...)    @Document @ExposeDocument(…)  │
+│  class Product { ... }         class Note { ... }            │
+│          │                              │                    │
+│          └──────────────┬───────────────┘                    │
+│                         ▼                                    │
 │  ExposeEntityProcessor.process()                             │
 │          │                                                   │
 │          ▼                                                   │
 │  EntityModel.parse()  ←── reads TypeElement field mirrors   │
-│          │                                                   │
+│          │  (detects @ExposeEntity or @ExposeDocument)       │
 │          ├──▶ RepositoryGenerator   → ProductRepository.java │
 │          ├──▶ DtoGenerator          → ProductDto.java        │
 │          ├──▶ RequestDtoGenerator   → ProductRequestDto.java │
@@ -75,6 +76,18 @@ classDiagram
         +boolean pageable
         +Class customMapper
     }
+    class ExposeDocument {
+        +String path
+        +Operation[] expose
+        +AuthType authType
+        +String[] roles
+        +String[] readRoles
+        +String[] writeRoles
+        +String[] ignoredFields
+        +boolean pageable
+        +Class customMapper
+        <<always MongoDB>>
+    }
     class Operation {
         <<enumeration>>
         FIND_ALL
@@ -98,6 +111,8 @@ classDiagram
     ExposeEntity --> Operation
     ExposeEntity --> AuthType
     ExposeEntity --> RelationMode
+    ExposeDocument --> Operation
+    ExposeDocument --> AuthType
 
     %% ── Processor module — model ─────────────────────────────────
     class EntityModel {
@@ -141,6 +156,7 @@ classDiagram
     %% ── Processor module — entry point ──────────────────────────
     class ExposeEntityProcessor {
         +process(Set, RoundEnvironment) boolean
+        <<handles @ExposeEntity and @ExposeDocument>>
     }
     ExposeEntityProcessor ..> EntityModel : parses
 
