@@ -6,6 +6,7 @@
 @Entity
 @ExposeEntity(
     path          = "orders",
+    store         = StoreType.JPA,        // JPA (default) or MONGO
     expose        = {Operation.FIND_ALL, Operation.FIND_BY_ID,
                      Operation.CREATE, Operation.UPDATE, Operation.DELETE},
     relationMode  = RelationMode.IDS_FOR_LIST_OBJECT_FOR_SINGLE,
