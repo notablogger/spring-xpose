@@ -25,13 +25,15 @@ spring-xpose eliminates steps 1–5 entirely.
 
 | | spring-xpose | Spring Data REST | Manual |
 |---|---|---|---|
-| Compile-time generation | ✅ | ❌ (runtime) | N/A |
+| Compile-time generation | ✅ | ❌ (repository export is runtime) | N/A |
 | DTO + mapper generated | ✅ | ❌ | Manual |
-| Per-entity security | ✅ | ❌ | Manual |
-| OpenAPI out of the box | ✅ | Partial | Manual |
-| Debuggable generated code | ✅ | ❌ | N/A |
-| Field exclusion from API | ✅ (`ignoredFields`) | ❌ | Manual |
-| Role-based read/write split | ✅ | ❌ | Manual |
+| Per-entity security | ✅ generated per entity | Partial (supported via Spring Security, but configured manually) | Manual |
+| OpenAPI support | ✅ generated annotations + optional springdoc autoconfig | Partial (typically via springdoc integration) | Manual |
+| Readable generated source | ✅ | ❌ | N/A |
+| Field shaping / exclusion | ✅ (`ignoredFields` + generated DTOs) | Partial (projections / excerpts / export controls, no generated DTOs) | Manual |
+| Role-based read/write split | ✅ (`readRoles` / `writeRoles`) | Partial (method-level security overrides, manual) | Manual |
+
+> **Note:** This comparison is specifically against **Spring Data REST** (repository-to-REST export), not Spring Data as a whole. In the table above, **Partial** means the capability exists with Spring Data REST plus extra Spring Security / springdoc customization, but it is not generated for you as part of the default repository export model.
 
 ---
 
