@@ -39,16 +39,26 @@ public class RestControllerGenerator {
         ClassName serCtx          = ClassName.get("io.github.notablogger.springxpose.serializer", "SerializationContext");
         ClassName entityManager   = ClassName.get("jakarta.persistence", "EntityManager");
         ClassName transactional   = ClassName.get("org.springframework.transaction.annotation", "Transactional");
+        ClassName mongoTemplate   = ClassName.get("org.springframework.data.mongodb.core", "MongoTemplate");
+        ClassName modelAttribute  = ClassName.get("org.springframework.web.bind.annotation", "ModelAttribute");
 
         boolean hasWriteOps  = model.operations().contains(Operation.CREATE)
                             || model.operations().contains(Operation.UPDATE);
         boolean hasRelations = model.relations().stream()
             .anyMatch(r -> "SINGLE".equals(r.relationType()) && !model.ignoredFields().contains(r.name()));
-
-        // EntityManager is only needed for JPA entities that have write ops with relations
         boolean needsEntityManager = model.storeType() == StoreType.JPA
             && hasWriteOps
             && hasRelations;
+        boolean needsMongoTemplate = model.storeType() == StoreType.MONGO
+            && model.hasFilterableFields();
+
+        // Filter-related class names (only used when filterableFields is non-empty)
+        ClassName filterParamsClass = model.hasFilterableFields()
+            ? ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "FilterParams")
+            : null;
+        ClassName specClass = model.hasFilterableFields()
+            ? ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "Spec")
+            : null;
 
         String entity = model.entitySimpleName();
 
@@ -89,65 +99,25 @@ public class RestControllerGenerator {
                 FieldSpec.builder(entityManager, "entityManager", Modifier.PRIVATE, Modifier.FINAL).build());
             ctor.addParameter(entityManager, "entityManager")
                 .addStatement("this.entityManager = entityManager");
-        }        controller.addMethod(ctor.build());
+        }
+
+        if (needsMongoTemplate) {
+            controller.addField(
+                FieldSpec.builder(mongoTemplate, "mongoTemplate", Modifier.PRIVATE, Modifier.FINAL).build());
+            ctor.addParameter(mongoTemplate, "mongoTemplate")
+                .addStatement("this.mongoTemplate = mongoTemplate");
+        }
+
+        controller.addMethod(ctor.build());
 
         // ── FIND_ALL ──
         if (model.operations().contains(Operation.FIND_ALL)) {
-            if (model.pageable()) {
-                // Pageable variant — returns Page<Dto>
-                ClassName pageableClass = ClassName.get("org.springframework.data.domain", "Pageable");
-                ClassName pageClass     = ClassName.get("org.springframework.data.domain", "Page");
-                TypeName  returnType    = ParameterizedTypeName.get(responseEntity,
-                    ParameterizedTypeName.get(pageClass, dtoClass));
-
-                controller.addMethod(MethodSpec.methodBuilder("findAll")
-                    .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "GetMapping"))
-                    .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
-                        .addMember("summary", "$S", "List all " + entity + " records (paginated)")
-                        .addMember("operationId", "$S", "findAll" + entity)
-                        .build())
-                    .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
-                        .addMember("value", "{\n  @$T(responseCode = $S, description = $S)\n}",
-                            OA_API_RESPONSE, "200", "Successful retrieval")
-                        .build())
-                    .addModifiers(Modifier.PUBLIC)
-                    .returns(returnType)
-                    .addParameter(pageableClass, "pageable")
-                    .addStatement("$T.set($T.Mode.LIST)", serCtx, serCtx)
-                    .beginControlFlow("try")
-                    .addStatement("return $T.ok(repository.findAll(pageable).map(mapper::toDto))", responseEntity)
-                    .nextControlFlow("finally")
-                    .addStatement("$T.clear()", serCtx)
-                    .endControlFlow()
-                    .build());
-            } else {
-                // Flat list variant (default)
-                TypeName returnType = ParameterizedTypeName.get(responseEntity,
-                    ParameterizedTypeName.get(listClass, dtoClass));
-
-                controller.addMethod(MethodSpec.methodBuilder("findAll")
-                    .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "GetMapping"))
-                    .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
-                        .addMember("summary", "$S", "List all " + entity + " records")
-                        .addMember("operationId", "$S", "findAll" + entity)
-                        .build())
-                    .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
-                        .addMember("value", "{\n  @$T(responseCode = $S, description = $S)\n}",
-                            OA_API_RESPONSE, "200", "Successful retrieval")
-                        .build())
-                    .addModifiers(Modifier.PUBLIC)
-                    .returns(returnType)
-                    .addStatement("$T.set($T.Mode.LIST)", serCtx, serCtx)
-                    .beginControlFlow("try")
-                    .addStatement("return $T.ok(mapper.toDtoList(repository.findAll()))", responseEntity)
-                    .nextControlFlow("finally")
-                    .addStatement("$T.clear()", serCtx)
-                    .endControlFlow()
-                    .build());
-            }
+            controller.addMethod(buildFindAll(
+                model, dtoClass, filterParamsClass, specClass, entityClass,
+                responseEntity, listClass, serCtx, mongoTemplate, modelAttribute));
         }
 
-        // ��─ FIND_BY_ID ──
+        // ── FIND_BY_ID ──
         if (model.operations().contains(Operation.FIND_BY_ID)) {
             TypeName returnType = ParameterizedTypeName.get(responseEntity, dtoClass);
             controller.addMethod(MethodSpec.methodBuilder("findById")
@@ -203,11 +173,9 @@ public class RestControllerGenerator {
                     .build())
                 .addStatement("$T entity = mapper.toEntity(requestDto)", entityClass);
 
-            // @Transactional is JPA-specific — Mongo uses auto-commit per operation
             if (model.storeType() == StoreType.JPA) {
                 create.addAnnotation(transactional);
             }
-
             if (needsEntityManager) {
                 addRelationResolution(create, model, entityManager);
             }
@@ -216,7 +184,7 @@ public class RestControllerGenerator {
             controller.addMethod(create.build());
         }
 
-        // ── UPDATE — load-then-merge to avoid blind overwrite ──
+        // ── UPDATE ──
         if (model.operations().contains(Operation.UPDATE)) {
             TypeName returnType = ParameterizedTypeName.get(responseEntity, dtoClass);
             MethodSpec.Builder update = MethodSpec.methodBuilder("update")
@@ -247,19 +215,15 @@ public class RestControllerGenerator {
                         .addMember("description", "$S", "Updated " + entity + " data")
                         .addMember("required", "$L", true).build())
                     .build())
-                // Load-then-merge: fetch the existing entity so unchanged fields are preserved
                 .addStatement("$T entity = repository.findById(id).orElse(null)", entityClass)
                 .beginControlFlow("if (entity == null)")
                 .addStatement("return $T.notFound().build()", responseEntity)
                 .endControlFlow()
-                // Merge only the fields present in requestDto into the loaded entity
                 .addStatement("mapper.updateEntity(requestDto, entity)");
 
-            // @Transactional is JPA-specific — Mongo uses auto-commit per operation
             if (model.storeType() == StoreType.JPA) {
                 update.addAnnotation(transactional);
             }
-
             if (needsEntityManager) {
                 addRelationResolution(update, model, entityManager);
             }
@@ -295,7 +259,6 @@ public class RestControllerGenerator {
                 .addStatement("repository.deleteById(id)")
                 .addStatement("return $T.noContent().build()", responseEntity);
 
-            // @Transactional is JPA-specific
             if (model.storeType() == StoreType.JPA) {
                 delete.addAnnotation(transactional);
             }
@@ -313,11 +276,107 @@ public class RestControllerGenerator {
     }
 
     /**
-     * Emits null-safe relation resolution via {@code EntityManager.getReference()}.
-     * Returns a proxy immediately (no extra SELECT) — the FK is validated at flush time.
-     * A bad ID will cause {@code jakarta.persistence.EntityNotFoundException} which the
-     * global {@code SpringXposeExceptionHandler} converts to a 422 response.
+     * Builds the {@code findAll} method, branching on:
+     * <ul>
+     *   <li>whether filterable fields are declared (adds {@code @ModelAttribute FilterParams} param)</li>
+     *   <li>whether pageable is enabled (returns {@code Page<Dto>} vs {@code List<Dto>})</li>
+     *   <li>JPA vs MongoDB store type (Specification vs Criteria/MongoTemplate)</li>
+     * </ul>
      */
+    private MethodSpec buildFindAll(
+            EntityModel model,
+            ClassName dtoClass,
+            ClassName filterParamsClass,
+            ClassName specClass,
+            ClassName entityClass,
+            ClassName responseEntity,
+            ClassName listClass,
+            ClassName serCtx,
+            ClassName mongoTemplate,
+            ClassName modelAttribute) {
+
+        boolean hasFilters = model.hasFilterableFields();
+        boolean isPageable = model.pageable();
+        boolean isMongo    = model.storeType() == StoreType.MONGO;
+        String  entity     = model.entitySimpleName();
+
+        ClassName pageableClass = ClassName.get("org.springframework.data.domain", "Pageable");
+        ClassName pageClass     = ClassName.get("org.springframework.data.domain", "Page");
+        ClassName pageImplClass = ClassName.get("org.springframework.data.domain", "PageImpl");
+        ClassName queryClass    = ClassName.get("org.springframework.data.mongodb.core.query", "Query");
+
+        MethodSpec.Builder method = MethodSpec.methodBuilder("findAll")
+            .addAnnotation(ClassName.get("org.springframework.web.bind.annotation", "GetMapping"))
+            .addAnnotation(AnnotationSpec.builder(OA_OPERATION)
+                .addMember("summary", "$S", "List all " + entity + " records" + (isPageable ? " (paginated)" : ""))
+                .addMember("operationId", "$S", "findAll" + entity)
+                .build())
+            .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
+                .addMember("value", "{\n  @$T(responseCode = $S, description = $S)\n}",
+                    OA_API_RESPONSE, "200", "Successful retrieval")
+                .build())
+            .addModifiers(Modifier.PUBLIC);
+
+        // Parameters
+        if (hasFilters) {
+            method.addParameter(ParameterSpec.builder(filterParamsClass, "filters")
+                .addAnnotation(modelAttribute)
+                .build());
+        }
+        if (isPageable) {
+            method.addParameter(pageableClass, "pageable");
+        }
+
+        // Return type
+        TypeName returnType = isPageable
+            ? ParameterizedTypeName.get(responseEntity, ParameterizedTypeName.get(pageClass, dtoClass))
+            : ParameterizedTypeName.get(responseEntity, ParameterizedTypeName.get(listClass, dtoClass));
+        method.returns(returnType);
+
+        // Body
+        method.addStatement("$T.set($T.Mode.LIST)", serCtx, serCtx)
+              .beginControlFlow("try");
+
+        if (!hasFilters) {
+            // ── original behaviour (no filtering) ──
+            if (isPageable) {
+                method.addStatement("return $T.ok(repository.findAll(pageable).map(mapper::toDto))", responseEntity);
+            } else {
+                method.addStatement("return $T.ok(mapper.toDtoList(repository.findAll()))", responseEntity);
+            }
+        } else if (!isMongo) {
+            // ── JPA with Specification ──
+            if (isPageable) {
+                method.addStatement(
+                    "return $T.ok(repository.findAll($T.withFilters(filters), pageable).map(mapper::toDto))",
+                    responseEntity, specClass);
+            } else {
+                method.addStatement(
+                    "return $T.ok(mapper.toDtoList(repository.findAll($T.withFilters(filters))))",
+                    responseEntity, specClass);
+            }
+        } else {
+            // ── MongoDB with Criteria/MongoTemplate ──
+            if (isPageable) {
+                method.addStatement("$T query = $T.withFilters(filters)", queryClass, specClass)
+                      .addStatement("long total = mongoTemplate.count(query, $T.class)", entityClass)
+                      .addStatement(
+                          "return $T.ok(new $T<>(mapper.toDtoList(mongoTemplate.find(query.with(pageable), $T.class)), pageable, total))",
+                          responseEntity, pageImplClass, entityClass);
+            } else {
+                method.addStatement(
+                    "return $T.ok(mapper.toDtoList(mongoTemplate.find($T.withFilters(filters), $T.class)))",
+                    responseEntity, specClass, entityClass);
+            }
+        }
+
+        method.nextControlFlow("finally")
+              .addStatement("$T.clear()", serCtx)
+              .endControlFlow();
+
+        return method.build();
+    }
+
     private static void addRelationResolution(
             MethodSpec.Builder method, EntityModel model, ClassName entityManager) {
         for (RelationFieldModel rel : model.relations()) {

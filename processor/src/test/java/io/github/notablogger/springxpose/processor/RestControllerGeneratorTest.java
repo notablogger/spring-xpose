@@ -58,7 +58,6 @@ class RestControllerGeneratorTest {
         assertThat(c).succeeded();
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("@PostMapping");
-        // Body must accept RequestDto, not the raw entity
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("BookRequestDto");
     }
@@ -71,19 +70,12 @@ class RestControllerGeneratorTest {
                 REPO);
 
         assertThat(c).succeeded();
-        // Verify only GET mappings are present — no POST/PUT/DELETE methods generated
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("findAll");
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("findById");
-        // Verify write methods are absent by checking method names are not present
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("@GetMapping");
-        // The class should NOT contain create/update/delete method bodies
-        // We verify this indirectly: the file should contain exactly 2 mapping annotations
-        // (one @GetMapping for findAll, one @GetMapping("/{id}") for findById)
-        // Use org.junit.jupiter.api.Assertions for string-based assertion as workaround
-        // for compile-testing's doesNotContain limitation
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("public ResponseEntity<List<");
     }
@@ -164,7 +156,6 @@ class RestControllerGeneratorTest {
             .compile(bookWith("@ExposeEntity()"), REPO);
 
         assertThat(c).succeeded();
-        // Entity "Book" → pluralised to "books"
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("/api/books");
     }
@@ -177,7 +168,6 @@ class RestControllerGeneratorTest {
         assertThat(c).succeeded();
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("@Valid");
-        // write methods must call mapper.toEntity
         assertThat(c).generatedSourceFile("com.example.entity.generated.BookController")
             .contentsAsUtf8String().contains("mapper.toEntity");
     }
@@ -243,5 +233,65 @@ class RestControllerGeneratorTest {
             "pageable=false must NOT generate a Pageable parameter");
         org.junit.jupiter.api.Assertions.assertTrue(src.contains("List<"),
             "pageable=false must return List<Dto>");
+    }
+
+    // ── filterableFields compile-tests ────────────────────────────────────────
+
+    @Test
+    void filterableFieldsGeneratesFilterParamsClass() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", filterableFields={\"title\"})"), REPO);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookFilterParams");
+    }
+
+    @Test
+    void filterableFieldsGeneratesSpecClass() {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", filterableFields={\"title\"})"), REPO);
+
+        assertThat(c).succeeded();
+        assertThat(c).generatedSourceFile("com.example.entity.generated.BookSpec");
+    }
+
+    @Test
+    void filterableFieldsGeneratesModelAttributeParamOnFindAll() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", filterableFields={\"title\"})"), REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow().getCharContent(false).toString();
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("@ModelAttribute"),
+            "filterableFields must add @ModelAttribute FilterParams param to findAll");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("BookFilterParams"),
+            "filterableFields must reference generated BookFilterParams in controller");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("BookSpec.withFilters"),
+            "filterableFields must call BookSpec.withFilters in the findAll body");
+    }
+
+    @Test
+    void filterableFieldsExtendsRepositoryWithJpaSpecificationExecutor() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", filterableFields={\"title\"})"), REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookRepository")
+            .orElseThrow().getCharContent(false).toString();
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("JpaSpecificationExecutor"),
+            "Repository must extend JpaSpecificationExecutor when filterableFields declared");
+    }
+
+    @Test
+    void noFilterableFieldsDoesNotExtendJpaSpecificationExecutor() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        String src = c.generatedSourceFile("com.example.entity.generated.BookRepository")
+            .orElseThrow().getCharContent(false).toString();
+        org.junit.jupiter.api.Assertions.assertFalse(src.contains("JpaSpecificationExecutor"),
+            "Repository must NOT extend JpaSpecificationExecutor when filterableFields is empty");
     }
 }

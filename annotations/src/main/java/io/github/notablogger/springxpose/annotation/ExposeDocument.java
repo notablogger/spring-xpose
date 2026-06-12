@@ -75,6 +75,24 @@ public @interface ExposeDocument {
     String[] ignoredFields() default {};
 
     /**
+     * Scalar field names to expose as optional exact-match query parameters on the
+     * {@code GET /api/<path>} (findAll) endpoint.
+     * <p>
+     * Example: {@code filterableFields = {"author"}} generates
+     * {@code GET /api/notes?author=Alice}.
+     * <p>
+     * For each listed field spring-xpose generates:
+     * <ul>
+     *   <li>A {@code <Entity>FilterParams} POJO whose fields match the document field types.</li>
+     *   <li>A {@code <Entity>Spec} class with a {@code withFilters(FilterParams)} method
+     *       returning a Spring Data MongoDB {@code Query}.</li>
+     * </ul>
+     * The generated controller injects {@code MongoTemplate} to execute the query.
+     * Only scalar fields are supported.
+     */
+    String[] filterableFields() default {};
+
+    /**
      * When {@code true}, the generated {@code findAll} endpoint accepts Spring Data
      * {@code Pageable} query parameters ({@code ?page=0&size=20&sort=name,asc}) and
      * returns a {@code Page<Dto>} instead of a flat {@code List<Dto>}.
