@@ -30,6 +30,7 @@ public record EntityModel(
     Set<String> readRoles,
     Set<String> writeRoles,
     Set<String> ignoredFields,
+    Set<String> filterableFields,
     /** Fully-qualified class name of the custom mapper, or {@code null} for the generated one. */
     String customMapperClassName,
     boolean pageable,
@@ -84,14 +85,11 @@ public record EntityModel(
             String fieldName = field.getSimpleName().toString();
             String fieldType = field.asType().toString();
 
-            // Detect @Id from both JPA and Spring Data (for MongoDB)
             boolean isId = field.getAnnotation(jakarta.persistence.Id.class) != null
                         || field.getAnnotation(org.springframework.data.annotation.Id.class) != null;
-            // @Version — JPA only; Mongo uses its own versioning but we don't auto-detect it
             boolean isVersion = storeType == StoreType.JPA
                 && field.getAnnotation(jakarta.persistence.Version.class) != null;
 
-            // JPA relations (@ManyToOne etc.) — not applicable for MongoDB
             boolean isManyToOne  = false;
             boolean isOneToMany  = false;
             boolean isManyToMany = false;
@@ -111,7 +109,6 @@ public record EntityModel(
                 String relatedEntityType = resolveRelatedEntityType(field, env);
                 relations.add(new RelationFieldModel(fieldName, fieldType, relationType, relatedEntityType));
             } else {
-                // Collect jakarta.validation annotations for RequestDto generation
                 List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
                     .filter(am -> am.getAnnotationType().toString().startsWith("jakarta.validation"))
                     .toList();
@@ -132,6 +129,7 @@ public record EntityModel(
         Set<String> readRoles      = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles     = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
         Set<String> ignoredFields  = new LinkedHashSet<>(Arrays.asList(annotation.ignoredFields()));
+        Set<String> filterableFields = new LinkedHashSet<>(Arrays.asList(annotation.filterableFields()));
 
         return new EntityModel(
             qualifiedName, simpleName, packageName,
@@ -139,6 +137,7 @@ public record EntityModel(
             fields, relations, operations,
             annotation.relationMode(), annotation.authType(),
             roles, readRoles, writeRoles, ignoredFields,
+            filterableFields,
             customMapperClassName,
             annotation.pageable(),
             versionFieldName,
@@ -156,10 +155,10 @@ public record EntityModel(
         String basePath = annotation.path().isEmpty() ? toBasePath(simpleName) : annotation.path();
         String customMapperClassName = resolveCustomMapper(element, env,
             "io.github.notablogger.springxpose.annotation.ExposeDocument");
-        StoreType storeType = StoreType.MONGO; // always MONGO for @ExposeDocument
+        StoreType storeType = StoreType.MONGO;
 
         List<FieldModel> fields = new ArrayList<>();
-        List<RelationFieldModel> relations = new ArrayList<>(); // always empty for documents
+        List<RelationFieldModel> relations = new ArrayList<>();
         String idFieldName = null;
         String idClassName = null;
 
@@ -195,17 +194,19 @@ public record EntityModel(
         Set<String> readRoles     = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles    = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
         Set<String> ignoredFields = new LinkedHashSet<>(Arrays.asList(annotation.ignoredFields()));
+        Set<String> filterableFields = new LinkedHashSet<>(Arrays.asList(annotation.filterableFields()));
 
         return new EntityModel(
             qualifiedName, simpleName, packageName,
             idFieldName, idClassName, basePath,
             fields, relations, operations,
-            RelationMode.IDS_FOR_LIST_OBJECT_FOR_SINGLE, // not used for MONGO
+            RelationMode.IDS_FOR_LIST_OBJECT_FOR_SINGLE,
             annotation.authType(),
             roles, readRoles, writeRoles, ignoredFields,
+            filterableFields,
             customMapperClassName,
             annotation.pageable(),
-            null, // no @Version for MongoDB documents
+            null,
             storeType
         );
     }
@@ -232,7 +233,7 @@ public record EntityModel(
                 }
             }
         }
-        return null; // default void.class — use generated mapper
+        return null;
     }
 
     private static String resolveRelatedEntityType(VariableElement field, ProcessingEnvironment env) {
@@ -250,8 +251,14 @@ public record EntityModel(
     public boolean hasCustomMapper() {
         return customMapperClassName != null;
     }
+
     /** True when this entity has a {@code @Version} field. */
     public boolean hasVersion() {
         return versionFieldName != null;
+    }
+
+    /** True when at least one filterable field is declared. */
+    public boolean hasFilterableFields() {
+        return filterableFields != null && !filterableFields.isEmpty();
     }
 }

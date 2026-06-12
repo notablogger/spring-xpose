@@ -34,6 +34,24 @@ public @interface ExposeEntity {
     String[] ignoredFields() default {};
 
     /**
+     * Scalar field names to expose as optional exact-match query parameters on the
+     * {@code GET /api/<path>} (findAll) endpoint.
+     * <p>
+     * Example: {@code filterableFields = {"status", "name"}} generates
+     * {@code GET /api/products?status=ACTIVE&name=Widget}.
+     * <p>
+     * For each listed field spring-xpose generates:
+     * <ul>
+     *   <li>A {@code <Entity>FilterParams} POJO whose fields match the entity field types.</li>
+     *   <li>A {@code <Entity>Spec} class with a {@code withFilters(FilterParams)} method
+     *       returning a {@code Specification<Entity>} (JPA) or {@code Query} (MongoDB).</li>
+     * </ul>
+     * The repository is automatically extended with {@code JpaSpecificationExecutor} for JPA.
+     * Only scalar (non-relation) fields are supported.
+     */
+    String[] filterableFields() default {};
+
+    /**
      * When {@code true}, the generated {@code findAll} endpoint accepts Spring Data
      * {@code Pageable} query parameters ({@code ?page=0&size=20&sort=name,asc}) and
      * returns a {@code Page<Dto>} instead of a flat {@code List<Dto>}.
