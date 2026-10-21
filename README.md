@@ -237,7 +237,17 @@ public class Note {
 | `customMapper` | `void.class` | Bring your own Spring bean mapper |
 | `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | `@ExposeEntity` only — how related entities appear in the DTO |
 
-→ Full attribute reference, operation table, auth types, `@ExposeDocument` guide, relation modes, request DTO rules, and custom mapper guide: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
+**Filtering `findAll`** — mark fields with `@ExposeField`:
+```java
+@ExposeField(operations = {FilterOperation.EQ, FilterOperation.LIKE})
+private String name;            // ?name=Widget   ?name_like=widg
+
+@ExposeField(operations = {FilterOperation.GT, FilterOperation.LT})
+private BigDecimal price;       // ?price_gt=10&price_lt=100
+```
+Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains). All filters are optional and AND-ed.
+
+→ Full attribute reference, operation table, auth types, `@ExposeDocument` guide, relation modes, request DTO rules, and custom mapper guide, `@ExposeField` filters: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
 
 ---
 

@@ -13,6 +13,13 @@ build/generated/sources/annotationProcessor/java/main/
     └── <Entity>SecurityConfigurer.java
 ```
 
+Two more files are written only when at least one field has `@ExposeField(operations = ...)`:
+
+```
+    ├── <Entity>FilterParams.java         (query filter parameters for findAll)
+    └── <Entity>Spec.java                 (JPA Specification / MongoDB Query builder)
+```
+
 These are real, readable source files — open them in your IDE, set breakpoints, and read them like any other class. They are **not** to be edited by hand; they are regenerated on every build.
 
 **Note:** For MongoDB documents (`@ExposeDocument`), annotate the ID field with `@org.springframework.data.annotation.Id`. For JPA entities (`@ExposeEntity`), use `@jakarta.persistence.Id`.
@@ -169,7 +176,7 @@ When `@ExposeEntity(customMapper = MyMapper.class)` is set:
 
 | `Operation` | HTTP method | Path | Request body | Response |
 |---|---|---|---|---|
-| `FIND_ALL` | `GET` | `/api/{path}` | — | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` |
+| `FIND_ALL` | `GET` | `/api/{path}` | — (optional filter query params with `@ExposeField`) | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` |
 | `FIND_BY_ID` | `GET` | `/api/{path}/{id}` | — | `200 Dto` / `404` |
 | `CREATE` | `POST` | `/api/{path}` | `@Valid RequestDto` | `201 Dto` / `400` |
 | `UPDATE` | `PUT` | `/api/{path}/{id}` | `@Valid RequestDto` | `200 Dto` / `400` / `404` |
@@ -182,6 +189,7 @@ When `@ExposeEntity(customMapper = MyMapper.class)` is set:
 | `repository` | `<Entity>Repository` | always |
 | `mapper` | `<Entity>Mapper` | always |
 | `entityManager` | `jakarta.persistence.EntityManager` | only when `CREATE` or `UPDATE` is enabled and the entity has non-ignored single relations |
+| `mongoTemplate` | `MongoTemplate` | only for `@ExposeDocument` with `@ExposeField` filters — runs the filter `Query` |
 
 ### `SerializationContext` usage
 
@@ -233,6 +241,55 @@ http.oauth2ResourceServer(o -> o.jwt(withDefaults()));  // OAUTH2
 ```
 
 CSRF is disabled — REST APIs are stateless and do not use cookie-based sessions.
+
+---
+
+## 7. `<Entity>FilterParams`
+
+**Type:** `final` class, bound from query parameters via `@ModelAttribute` (plus `@ParameterObject` when springdoc is present)  
+**Generated when:** at least one field has `@ExposeField(operations = ...)`
+
+One property per (field, operation). Primitive field types are boxed, so an absent parameter is `null` and adds no condition. Suffixed parameters carry two annotations — `@BindParam` so Spring MVC binds `?price_gt=`, and `@Parameter(name = ...)` so springdoc documents `price_gt` rather than the Java name:
+
+```java
+public final class ProductFilterParams {
+  @Parameter(name = "price", description = "price equals")
+  private final BigDecimal price;
+
+  @Parameter(name = "price_gt", description = "price greater than")
+  private final BigDecimal priceGt;
+
+  public ProductFilterParams(BigDecimal price, @BindParam("price_gt") BigDecimal priceGt) { ... }
+
+  public BigDecimal getPrice() { return price; }
+  public BigDecimal getPriceGt() { return priceGt; }
+}
+```
+
+---
+
+## 8. `<Entity>Spec`
+
+**Type:** class with a static `withFilters(<Entity>FilterParams)` method  
+**Generated when:** same as `<Entity>FilterParams`
+
+Each non-null filter property adds one condition; conditions are AND-ed.
+
+- **JPA** — returns `Specification<Entity>`, executed with `repository.findAll(spec)` / `findAll(spec, pageable)`. A `likePattern` helper is added when `LIKE` is used; it lower-cases the value and escapes `%`, `_` and `\`.
+- **MongoDB** — returns a `Query` built from `Criteria`, executed with `mongoTemplate.find(...)` (and `count(...)` for pageable). `LIKE` uses `Pattern.quote(value)` with the `i` option.
+
+```java
+public static Specification<Product> withFilters(ProductFilterParams f) {
+  return (root, query, cb) -> {
+    List<Predicate> predicates = new ArrayList<>();
+    if (f.getPrice() != null)
+      predicates.add(cb.equal(root.get("price"), f.getPrice()));
+    if (f.getPriceGt() != null)
+      predicates.add(cb.greaterThan(root.<BigDecimal>get("price"), f.getPriceGt()));
+    return cb.and(predicates.toArray(new Predicate[0]));
+  };
+}
+```
 
 ---
 

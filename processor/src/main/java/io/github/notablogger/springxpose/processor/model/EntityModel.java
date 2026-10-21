@@ -30,7 +30,8 @@ public record EntityModel(
     Set<String> readRoles,
     Set<String> writeRoles,
     Set<String> ignoredFields,
-    Set<String> filterableFields,
+    /** Fields declared filterable via {@code @ExposeField}, in declaration order. */
+    List<FilterFieldModel> filters,
     /** Fully-qualified class name of the custom mapper, or {@code null} for the generated one. */
     String customMapperClassName,
     boolean pageable,
@@ -75,6 +76,8 @@ public record EntityModel(
         List<RelationFieldModel> relations = new ArrayList<>();
         String idFieldName = null;
         String idClassName = null;
+        List<FilterFieldModel> filters = new ArrayList<>();
+        boolean filtersValid = true;
         String versionFieldName = null;
 
         for (Element enclosed : element.getEnclosedElements()) {
@@ -85,11 +88,14 @@ public record EntityModel(
             String fieldName = field.getSimpleName().toString();
             String fieldType = field.asType().toString();
 
+            // Detect @Id from both JPA and Spring Data (for MongoDB)
             boolean isId = field.getAnnotation(jakarta.persistence.Id.class) != null
                         || field.getAnnotation(org.springframework.data.annotation.Id.class) != null;
+            // @Version — JPA only; Mongo uses its own versioning but we don't auto-detect it
             boolean isVersion = storeType == StoreType.JPA
                 && field.getAnnotation(jakarta.persistence.Version.class) != null;
 
+            // JPA relations (@ManyToOne etc.) — not applicable for MongoDB
             boolean isManyToOne  = false;
             boolean isOneToMany  = false;
             boolean isManyToMany = false;
@@ -101,6 +107,9 @@ public record EntityModel(
                 isOneToOne   = field.getAnnotation(jakarta.persistence.OneToOne.class)   != null;
             }
 
+            filtersValid &= collectFilter(field,
+                isManyToOne || isOneToMany || isManyToMany || isOneToOne, filters, env);
+
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
             if (isVersion) { versionFieldName = fieldName; }
 
@@ -109,6 +118,7 @@ public record EntityModel(
                 String relatedEntityType = resolveRelatedEntityType(field, env);
                 relations.add(new RelationFieldModel(fieldName, fieldType, relationType, relatedEntityType));
             } else {
+                // Collect jakarta.validation annotations for RequestDto generation
                 List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
                     .filter(am -> am.getAnnotationType().toString().startsWith("jakarta.validation"))
                     .toList();
@@ -123,13 +133,13 @@ public record EntityModel(
                 + "@org.springframework.data.annotation.Id (MongoDB)", element);
             return null;
         }
+        if (!filtersValid || !checkFilterNames(element, filters, env)) return null;
 
         Set<Operation> operations  = new LinkedHashSet<>(Arrays.asList(annotation.expose()));
         Set<String> roles          = new LinkedHashSet<>(Arrays.asList(annotation.roles()));
         Set<String> readRoles      = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles     = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
         Set<String> ignoredFields  = new LinkedHashSet<>(Arrays.asList(annotation.ignoredFields()));
-        Set<String> filterableFields = new LinkedHashSet<>(Arrays.asList(annotation.filterableFields()));
 
         return new EntityModel(
             qualifiedName, simpleName, packageName,
@@ -137,7 +147,7 @@ public record EntityModel(
             fields, relations, operations,
             annotation.relationMode(), annotation.authType(),
             roles, readRoles, writeRoles, ignoredFields,
-            filterableFields,
+            filters,
             customMapperClassName,
             annotation.pageable(),
             versionFieldName,
@@ -155,12 +165,14 @@ public record EntityModel(
         String basePath = annotation.path().isEmpty() ? toBasePath(simpleName) : annotation.path();
         String customMapperClassName = resolveCustomMapper(element, env,
             "io.github.notablogger.springxpose.annotation.ExposeDocument");
-        StoreType storeType = StoreType.MONGO;
+        StoreType storeType = StoreType.MONGO; // always MONGO for @ExposeDocument
 
         List<FieldModel> fields = new ArrayList<>();
-        List<RelationFieldModel> relations = new ArrayList<>();
+        List<RelationFieldModel> relations = new ArrayList<>(); // always empty for documents
         String idFieldName = null;
         String idClassName = null;
+        List<FilterFieldModel> filters = new ArrayList<>();
+        boolean filtersValid = true;
 
         for (Element enclosed : element.getEnclosedElements()) {
             if (enclosed.getKind() != ElementKind.FIELD) continue;
@@ -175,6 +187,8 @@ public record EntityModel(
 
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
 
+            filtersValid &= collectFilter(field, false, filters, env);
+
             List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
                 .filter(am -> am.getAnnotationType().toString().startsWith("jakarta.validation"))
                 .toList();
@@ -188,27 +202,109 @@ public record EntityModel(
                 element);
             return null;
         }
+        if (!filtersValid || !checkFilterNames(element, filters, env)) return null;
 
         Set<Operation> operations = new LinkedHashSet<>(Arrays.asList(annotation.expose()));
         Set<String> roles         = new LinkedHashSet<>(Arrays.asList(annotation.roles()));
         Set<String> readRoles     = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles    = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
         Set<String> ignoredFields = new LinkedHashSet<>(Arrays.asList(annotation.ignoredFields()));
-        Set<String> filterableFields = new LinkedHashSet<>(Arrays.asList(annotation.filterableFields()));
 
         return new EntityModel(
             qualifiedName, simpleName, packageName,
             idFieldName, idClassName, basePath,
             fields, relations, operations,
-            RelationMode.IDS_FOR_LIST_OBJECT_FOR_SINGLE,
+            RelationMode.IDS_FOR_LIST_OBJECT_FOR_SINGLE, // not used for MONGO
             annotation.authType(),
             roles, readRoles, writeRoles, ignoredFields,
-            filterableFields,
+            filters,
             customMapperClassName,
             annotation.pageable(),
-            null,
+            null, // no @Version for MongoDB documents
             storeType
         );
+    }
+
+    /**
+     * Adds a {@link FilterFieldModel} for a field carrying {@code @ExposeField} with at least one
+     * operation. Reports a compile error and returns {@code false} when an operation does not
+     * fit the field (relation field, range operation on a non-comparable type, LIKE on a non-String).
+     */
+    private static boolean collectFilter(VariableElement field, boolean isRelation,
+                                         List<FilterFieldModel> filters, ProcessingEnvironment env) {
+        ExposeField exposeField = field.getAnnotation(ExposeField.class);
+        if (exposeField == null || exposeField.operations().length == 0) return true;
+
+        Set<FilterOperation> operations = EnumSet.noneOf(FilterOperation.class);
+        operations.addAll(Arrays.asList(exposeField.operations()));
+        String fieldName = field.getSimpleName().toString();
+
+        if (isRelation) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "@ExposeField: relation field '" + fieldName + "' cannot be filtered — "
+                + "only scalar fields support filter operations", field);
+            return false;
+        }
+
+        TypeMirror type = field.asType();
+        boolean valid = true;
+        for (FilterOperation op : operations) {
+            boolean fits = switch (op) {
+                case EQ, NE -> true;
+                case GT, GTE, LT, LTE -> isComparable(type, env);
+                case LIKE -> isString(type, env);
+            };
+            if (!fits) {
+                env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "@ExposeField: " + op + " is not supported on '" + fieldName + "' of type " + type
+                    + (op == FilterOperation.LIKE
+                        ? " — LIKE requires a String field"
+                        : " — " + op + " requires a primitive or Comparable type"),
+                    field);
+                valid = false;
+            }
+        }
+        if (valid) filters.add(new FilterFieldModel(fieldName, type, operations));
+        return valid;
+    }
+
+    private static boolean isString(TypeMirror type, ProcessingEnvironment env) {
+        TypeMirror string = env.getElementUtils().getTypeElement("java.lang.String").asType();
+        return env.getTypeUtils().isSameType(type, string);
+    }
+
+    private static boolean isComparable(TypeMirror type, ProcessingEnvironment env) {
+        if (type.getKind().isPrimitive()) return true;
+        TypeMirror comparable = env.getElementUtils().getTypeElement("java.lang.Comparable").asType();
+        return env.getTypeUtils().isAssignable(
+            env.getTypeUtils().erasure(type), env.getTypeUtils().erasure(comparable));
+    }
+
+    /**
+     * Reports a compile error when two filter operations map to the same query parameter or
+     * {@code FilterParams} property — e.g. a field {@code priceGt} next to {@code price} with GT.
+     */
+    private static boolean checkFilterNames(TypeElement element, List<FilterFieldModel> filters,
+                                            ProcessingEnvironment env) {
+        Map<String, String> params = new HashMap<>();
+        Map<String, String> properties = new HashMap<>();
+        boolean valid = true;
+        for (FilterFieldModel filter : filters) {
+            for (FilterOperation op : filter.operations()) {
+                String owner = filter.name() + " " + op;
+                String clash = params.putIfAbsent(filter.paramName(op), owner);
+                if (clash == null) clash = properties.putIfAbsent(filter.propertyName(op), owner);
+                if (clash != null) {
+                    env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "@ExposeField: filter '" + owner + "' on " + element.getSimpleName()
+                        + " clashes with '" + clash + "' — both map to query parameter '"
+                        + filter.paramName(op) + "' / property '" + filter.propertyName(op) + "'",
+                        element);
+                    valid = false;
+                }
+            }
+        }
+        return valid;
     }
 
     /**
@@ -233,7 +329,7 @@ public record EntityModel(
                 }
             }
         }
-        return null;
+        return null; // default void.class — use generated mapper
     }
 
     private static String resolveRelatedEntityType(VariableElement field, ProcessingEnvironment env) {
@@ -257,8 +353,8 @@ public record EntityModel(
         return versionFieldName != null;
     }
 
-    /** True when at least one filterable field is declared. */
-    public boolean hasFilterableFields() {
-        return filterableFields != null && !filterableFields.isEmpty();
+    /** True when at least one field declares {@code @ExposeField} operations. */
+    public boolean hasFilters() {
+        return filters != null && !filters.isEmpty();
     }
 }

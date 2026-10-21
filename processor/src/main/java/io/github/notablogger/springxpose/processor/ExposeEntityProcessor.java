@@ -31,6 +31,7 @@ public class ExposeEntityProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        // Collect elements from both @ExposeEntity and @ExposeDocument
         Set<Element> allElements = new LinkedHashSet<>();
         allElements.addAll(roundEnv.getElementsAnnotatedWith(ExposeEntity.class));
         allElements.addAll(roundEnv.getElementsAnnotatedWith(ExposeDocument.class));

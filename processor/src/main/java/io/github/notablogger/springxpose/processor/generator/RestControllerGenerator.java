@@ -18,6 +18,7 @@ public class RestControllerGenerator {
     private static final ClassName OA_API_RESPONSES = ClassName.get("io.swagger.v3.oas.annotations.responses", "ApiResponses");
     private static final ClassName OA_PARAMETER     = ClassName.get("io.swagger.v3.oas.annotations", "Parameter");
     private static final ClassName OA_REQUEST_BODY  = ClassName.get("io.swagger.v3.oas.annotations.parameters", "RequestBody");
+    private static final String    SPRINGDOC_PARAMETER_OBJECT = "org.springdoc.core.annotations.ParameterObject";
     private static final ClassName OA_SECURITY_REQ  = ClassName.get("io.swagger.v3.oas.annotations.security", "SecurityRequirement");
 
     private final ProcessingEnvironment processingEnv;
@@ -46,17 +47,19 @@ public class RestControllerGenerator {
                             || model.operations().contains(Operation.UPDATE);
         boolean hasRelations = model.relations().stream()
             .anyMatch(r -> "SINGLE".equals(r.relationType()) && !model.ignoredFields().contains(r.name()));
+
+        // EntityManager is only needed for JPA entities that have write ops with relations
         boolean needsEntityManager = model.storeType() == StoreType.JPA
             && hasWriteOps
             && hasRelations;
         boolean needsMongoTemplate = model.storeType() == StoreType.MONGO
-            && model.hasFilterableFields();
+            && model.hasFilters();
 
-        // Filter-related class names (only used when filterableFields is non-empty)
-        ClassName filterParamsClass = model.hasFilterableFields()
+        // Filter-related class names (only used when @ExposeField filters are declared)
+        ClassName filterParamsClass = model.hasFilters()
             ? ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "FilterParams")
             : null;
-        ClassName specClass = model.hasFilterableFields()
+        ClassName specClass = model.hasFilters()
             ? ClassName.get(model.packageName() + ".generated", model.entitySimpleName() + "Spec")
             : null;
 
@@ -173,9 +176,11 @@ public class RestControllerGenerator {
                     .build())
                 .addStatement("$T entity = mapper.toEntity(requestDto)", entityClass);
 
+            // @Transactional is JPA-specific — Mongo uses auto-commit per operation
             if (model.storeType() == StoreType.JPA) {
                 create.addAnnotation(transactional);
             }
+
             if (needsEntityManager) {
                 addRelationResolution(create, model, entityManager);
             }
@@ -184,7 +189,7 @@ public class RestControllerGenerator {
             controller.addMethod(create.build());
         }
 
-        // ── UPDATE ──
+        // ── UPDATE — load-then-merge to avoid blind overwrite ──
         if (model.operations().contains(Operation.UPDATE)) {
             TypeName returnType = ParameterizedTypeName.get(responseEntity, dtoClass);
             MethodSpec.Builder update = MethodSpec.methodBuilder("update")
@@ -215,15 +220,19 @@ public class RestControllerGenerator {
                         .addMember("description", "$S", "Updated " + entity + " data")
                         .addMember("required", "$L", true).build())
                     .build())
+                // Load-then-merge: fetch the existing entity so unchanged fields are preserved
                 .addStatement("$T entity = repository.findById(id).orElse(null)", entityClass)
                 .beginControlFlow("if (entity == null)")
                 .addStatement("return $T.notFound().build()", responseEntity)
                 .endControlFlow()
+                // Merge only the fields present in requestDto into the loaded entity
                 .addStatement("mapper.updateEntity(requestDto, entity)");
 
+            // @Transactional is JPA-specific — Mongo uses auto-commit per operation
             if (model.storeType() == StoreType.JPA) {
                 update.addAnnotation(transactional);
             }
+
             if (needsEntityManager) {
                 addRelationResolution(update, model, entityManager);
             }
@@ -259,6 +268,7 @@ public class RestControllerGenerator {
                 .addStatement("repository.deleteById(id)")
                 .addStatement("return $T.noContent().build()", responseEntity);
 
+            // @Transactional is JPA-specific
             if (model.storeType() == StoreType.JPA) {
                 delete.addAnnotation(transactional);
             }
@@ -278,7 +288,7 @@ public class RestControllerGenerator {
     /**
      * Builds the {@code findAll} method, branching on:
      * <ul>
-     *   <li>whether filterable fields are declared (adds {@code @ModelAttribute FilterParams} param)</li>
+     *   <li>whether {@code @ExposeField} filters are declared (adds a {@code @ModelAttribute FilterParams} param)</li>
      *   <li>whether pageable is enabled (returns {@code Page<Dto>} vs {@code List<Dto>})</li>
      *   <li>JPA vs MongoDB store type (Specification vs Criteria/MongoTemplate)</li>
      * </ul>
@@ -295,7 +305,7 @@ public class RestControllerGenerator {
             ClassName mongoTemplate,
             ClassName modelAttribute) {
 
-        boolean hasFilters = model.hasFilterableFields();
+        boolean hasFilters = model.hasFilters();
         boolean isPageable = model.pageable();
         boolean isMongo    = model.storeType() == StoreType.MONGO;
         String  entity     = model.entitySimpleName();
@@ -319,9 +329,12 @@ public class RestControllerGenerator {
 
         // Parameters
         if (hasFilters) {
-            method.addParameter(ParameterSpec.builder(filterParamsClass, "filters")
-                .addAnnotation(modelAttribute)
-                .build());
+            ParameterSpec.Builder filtersParam = ParameterSpec.builder(filterParamsClass, "filters");
+            // Without @ParameterObject springdoc documents the filters as one untyped "filters" param
+            if (processingEnv.getElementUtils().getTypeElement(SPRINGDOC_PARAMETER_OBJECT) != null) {
+                filtersParam.addAnnotation(ClassName.bestGuess(SPRINGDOC_PARAMETER_OBJECT));
+            }
+            method.addParameter(filtersParam.addAnnotation(modelAttribute).build());
         }
         if (isPageable) {
             method.addParameter(pageableClass, "pageable");
@@ -377,6 +390,12 @@ public class RestControllerGenerator {
         return method.build();
     }
 
+    /**
+     * Emits null-safe relation resolution via {@code EntityManager.getReference()}.
+     * Returns a proxy immediately (no extra SELECT) — the FK is validated at flush time.
+     * A bad ID will cause {@code jakarta.persistence.EntityNotFoundException} which the
+     * global {@code SpringXposeExceptionHandler} converts to a 422 response.
+     */
     private static void addRelationResolution(
             MethodSpec.Builder method, EntityModel model, ClassName entityManager) {
         for (RelationFieldModel rel : model.relations()) {

@@ -8,6 +8,31 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
 
+/**
+ * Generates a Spring Data repository interface for each
+ * {@code @ExposeEntity}- or {@code @ExposeDocument}-annotated class.
+ *
+ * <ul>
+ *   <li>{@code StoreType.JPA}   → {@code JpaRepository<Entity, Id>}</li>
+ *   <li>{@code StoreType.MONGO} → {@code MongoRepository<Entity, Id>}
+ *       (used automatically when class carries {@code @ExposeDocument})</li>
+ * </ul>
+ *
+ * <p>Generated output example for {@code Product} (JPA, {@code Long} id):
+ * <pre>
+ * package com.example.entity.generated;
+ *
+ * &#64;Repository
+ * public interface ProductRepository extends JpaRepository&lt;Product, Long&gt; {}
+ * </pre>
+ *
+ * <p>The generated interface is placed in the same {@code .generated} subpackage
+ * as the controller and security configurer, so it is picked up automatically
+ * by Spring Data's repository scanning.
+ *
+ * <p>JPA entities with {@code @ExposeField} filters also extend
+ * {@code JpaSpecificationExecutor<Entity>}, used by the generated {@code findAll}.
+ */
 public class RepositoryGenerator {
 
     private final ProcessingEnvironment processingEnv;
@@ -21,6 +46,7 @@ public class RepositoryGenerator {
         ClassName idClass     = ClassName.bestGuess(model.idClassName());
         ClassName repository  = ClassName.get("org.springframework.stereotype", "Repository");
 
+        // Choose base interface based on store type
         ClassName baseRepository = model.storeType() == StoreType.MONGO
             ? ClassName.get("org.springframework.data.mongodb.repository", "MongoRepository")
             : ClassName.get("org.springframework.data.jpa.repository", "JpaRepository");
@@ -36,8 +62,8 @@ public class RepositoryGenerator {
             .addAnnotation(repository)
             .addSuperinterface(superInterface);
 
-        // JPA entities with filterable fields need JpaSpecificationExecutor for Specification-based queries
-        if (model.storeType() == StoreType.JPA && model.hasFilterableFields()) {
+        // JPA entities with filters need JpaSpecificationExecutor for Specification-based queries
+        if (model.storeType() == StoreType.JPA && model.hasFilters()) {
             ClassName specExecutor = ClassName.get(
                 "org.springframework.data.jpa.repository", "JpaSpecificationExecutor");
             repoBuilder.addSuperinterface(ParameterizedTypeName.get(specExecutor, entityClass));
@@ -54,3 +80,4 @@ public class RepositoryGenerator {
         }
     }
 }
+

@@ -150,6 +150,51 @@ public class User {
 
 ---
 
+## `@ExposeField` — Filtering `findAll`
+
+Put `@ExposeField(operations = ...)` on a field to accept it as an optional query filter on `GET /api/<path>`. Each operation becomes its own query parameter; `EQ` uses the field name, every other operation adds a suffix. All filters are optional and AND-ed.
+
+```java
+import static io.github.notablogger.springxpose.annotation.FilterOperation.*;
+
+@Entity
+@ExposeEntity(path = "products")
+public class Product {
+    @Id @GeneratedValue private Long id;
+
+    @ExposeField(operations = {EQ, NE, LIKE})
+    private String name;          // ?name=  ?name_ne=  ?name_like=
+
+    @ExposeField(operations = {GT, LT})
+    private BigDecimal price;     // ?price_gt=  ?price_lt=
+
+    private String description;   // not filterable
+}
+```
+
+```
+GET /api/products?price_gt=10&price_lt=100&name_like=widget
+```
+
+| `FilterOperation` | Query param | JPA | MongoDB | Allowed field types |
+|---|---|---|---|---|
+| `EQ` | `field` | `=` | `is` | any scalar |
+| `NE` | `field_ne` | `<> OR IS NULL` | `ne` | any scalar |
+| `GT` / `GTE` | `field_gt` / `field_gte` | `>` / `>=` | `gt` / `gte` | primitive or `Comparable` |
+| `LT` / `LTE` | `field_lt` / `field_lte` | `<` / `<=` | `lt` / `lte` | primitive or `Comparable` |
+| `LIKE` | `field_like` | `lower(field) LIKE %value%` | case-insensitive regex | `String` |
+
+- **`NE` includes nulls** on both stores: `?status_ne=ACTIVE` also returns records whose `status` is `null`.
+- **`LIKE` is a case-insensitive "contains"**. `%`, `_` and regex characters in the value are matched literally — `?name_like=50%` does not match `500`.
+- **A value of the wrong type** (`?price_gt=abc`) is rejected with `400 Bad Request` before any query runs.
+- **Compile-time errors** for operations that don't fit the field: range operations on non-comparable types, `LIKE` on non-`String` fields, filters on JPA relation fields, and two filters mapping to the same parameter name.
+
+Generated code: `<Entity>FilterParams` (bound with `@ModelAttribute`) and `<Entity>Spec` (JPA `Specification` or MongoDB `Query`). JPA repositories also extend `JpaSpecificationExecutor`. See [`generated-artifacts.md`](generated-artifacts.md).
+
+> **OpenAPI:** when springdoc is on the classpath the filter parameter gets `@ParameterObject`, so Swagger UI lists each filter (`price_gt`, …) with its type.
+
+---
+
 ## Request DTO
 
 For entities with `CREATE` or `UPDATE` operations, spring-xpose generates a **`<Entity>RequestDto`** as the `@RequestBody` type. This cleanly separates what clients _send_ from what the API _returns_.
