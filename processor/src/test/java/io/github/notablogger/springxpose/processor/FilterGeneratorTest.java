@@ -139,7 +139,7 @@ class FilterGeneratorTest {
                 "getName()", "getNameNe()", "getNameLike()",
                 "getPrice()", "getPriceGt()", "getPriceGte()", "getPriceLt()", "getPriceLte()",
                 "getStockGt()", "getStockLt()", "getStatus()", "getStatusIn()", "getStatusNotIn()",
-                "getDeletedAtNull()"}) {
+                "getDeletedAtIsNull()"}) {
             assertTrue(src.contains(getter), "FilterParams must have " + getter);
         }
         assertFalse(src.contains("getSku"), "@ExposeField without operations must not be filterable");
@@ -179,7 +179,7 @@ class FilterGeneratorTest {
         String src = source(c, "com.example.entity.generated.ProductFilterParams");
         assertTrue(src.contains("@BindParam(\"status_in\") List<Product.Status> statusIn"), src);
         assertTrue(src.contains("@BindParam(\"status_not_in\") List<Product.Status> statusNotIn"), src);
-        assertTrue(src.contains("@BindParam(\"deletedAt_null\") Boolean deletedAtNull"), src);
+        assertTrue(src.contains("@BindParam(\"deletedAt_is_null\") Boolean deletedAtIsNull"), src);
     }
 
     // ── JPA Spec ──────────────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ class FilterGeneratorTest {
         assertTrue(src.contains("cb.like(cb.lower(root.<String>get(\"name\")), likePattern(f.getNameLike()), '\\\\')"), src);
         assertTrue(src.contains("root.get(\"status\").in(f.getStatusIn())"), src);
         assertTrue(src.contains("cb.or(cb.not(root.get(\"status\").in(f.getStatusNotIn())), cb.isNull(root.get(\"status\")))"), src);
-        assertTrue(src.contains("f.getDeletedAtNull() ? cb.isNull(root.get(\"deletedAt\")) : cb.isNotNull(root.get(\"deletedAt\"))"), src);
+        assertTrue(src.contains("f.getDeletedAtIsNull() ? cb.isNull(root.get(\"deletedAt\")) : cb.isNotNull(root.get(\"deletedAt\"))"), src);
     }
 
     @Test
@@ -253,7 +253,7 @@ class FilterGeneratorTest {
         assertTrue(src.contains("Criteria.where(\"createdAt\").lte(f.getCreatedAtLte())"), src);
         assertTrue(src.contains("Criteria.where(\"author\").in(f.getAuthorIn())"), src);
         assertTrue(src.contains("Criteria.where(\"author\").nin(f.getAuthorNotIn())"), src);
-        assertTrue(src.contains("f.getCreatedAtNull() ? Criteria.where(\"createdAt\").is(null) : Criteria.where(\"createdAt\").ne(null)"), src);
+        assertTrue(src.contains("f.getCreatedAtIsNull() ? Criteria.where(\"createdAt\").is(null) : Criteria.where(\"createdAt\").ne(null)"), src);
 
         String controller = source(c, "com.example.document.generated.NoteController");
         assertTrue(controller.contains("mongoTemplate.find(NoteSpec.withFilters(filters)"), controller);

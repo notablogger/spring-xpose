@@ -12,7 +12,7 @@ package io.github.notablogger.springxpose.annotation;
  * LT     → ?price_lt=10           LTE     → ?price_lte=10
  * LIKE   → ?name_like=wid
  * IN     → ?status_in=A,B         NOT_IN  → ?status_not_in=A,B
- * IS_NULL → ?deletedAt_null=true
+ * IS_NULL → ?deletedAt_is_null=true
  * </pre>
  */
 public enum FilterOperation {
@@ -55,7 +55,7 @@ public enum FilterOperation {
     NOT_IN,
 
     /**
-     * {@code ?deletedAt_null=true} matches records where the field is {@code null};
+     * {@code ?deletedAt_is_null=true} matches records where the field is {@code null};
      * {@code false} matches records where it is set. Not supported on primitive fields.
      */
     IS_NULL

@@ -30,9 +30,9 @@ public record FilterFieldModel(
         return property.toString();
     }
 
-    /** Query suffix for an operation: its lower-cased name, except IS_NULL → {@code null} ({@code ?deletedAt_null=true}). */
+    /** Query suffix for an operation: its lower-cased name ({@code gt}, {@code not_in}, {@code is_null}). */
     private static String suffix(FilterOperation op) {
-        return op == FilterOperation.IS_NULL ? "null" : op.name().toLowerCase(Locale.ROOT);
+        return op.name().toLowerCase(Locale.ROOT);
     }
 
     /** Getter name in {@code FilterParams}: {@code getPrice}, {@code getPriceGt}, etc. */

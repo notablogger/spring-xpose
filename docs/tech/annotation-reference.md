@@ -185,11 +185,11 @@ GET /api/products?price_gt=10&price_lt=100&name_like=widget
 | `LIKE` | `field_like` | `lower(field) LIKE %value%` | case-insensitive regex | `String` |
 | `IN` | `field_in` | `IN (…)` | `in` | any scalar |
 | `NOT_IN` | `field_not_in` | `NOT IN (…) OR IS NULL` | `nin` | any scalar |
-| `IS_NULL` | `field_null` (`true` / `false`) | `IS NULL` / `IS NOT NULL` | `is(null)` / `ne(null)` | non-primitive |
+| `IS_NULL` | `field_is_null` (`true` / `false`) | `IS NULL` / `IS NOT NULL` | `is(null)` / `ne(null)` | non-primitive |
 
 - **`NE` and `NOT_IN` include nulls** on both stores: `?status_ne=ACTIVE` also returns records whose `status` is `null`.
 - **`IN` / `NOT_IN` take a list** — comma-separated (`?status_in=ACTIVE,PENDING`) or the parameter repeated. An empty value adds no condition.
-- **`IS_NULL`** takes a boolean: `?deletedAt_null=true` → field is null, `false` → field is set. Not allowed on primitive fields, which are never null.
+- **`IS_NULL`** takes a boolean: `?deletedAt_is_null=true` → field is null, `false` → field is set. Not allowed on primitive fields, which are never null.
 - **`LIKE` is a case-insensitive "contains"**. `%`, `_` and regex characters in the value are matched literally — `?name_like=50%` does not match `500`.
 - **A value of the wrong type** (`?price_gt=abc`) is rejected with `400 Bad Request` before any query runs.
 - **Compile-time errors** for operations that don't fit the field: range operations on non-comparable types, `LIKE` on non-`String` fields, `IS_NULL` on primitives, filters on JPA relation fields, and two filters mapping to the same parameter name.
