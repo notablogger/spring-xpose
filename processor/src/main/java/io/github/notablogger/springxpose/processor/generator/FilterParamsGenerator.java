@@ -69,7 +69,7 @@ public class FilterParamsGenerator {
                 clazz.addField(FieldSpec.builder(type, property, Modifier.PRIVATE, Modifier.FINAL)
                     .addAnnotation(AnnotationSpec.builder(OA_PARAMETER)
                         .addMember("name", "$S", param)
-                        .addMember("description", "$S", describe(filter.name(), op))
+                        .addMember("description", "$S", describe(filter, op))
                         .build())
                     .build());
 
@@ -103,19 +103,30 @@ public class FilterParamsGenerator {
 
     /**
      * Java type of one filter property: the boxed field type, a {@code List} of it for IN / NOT_IN
-     * (Spring splits {@code ?status_in=A,B} into the list), or {@code Boolean} for IS_NULL.
+     * (Spring splits {@code ?status_in=A,B} into the list) — of the element type for collection
+     * fields — or {@code Boolean} for IS_NULL.
      */
     private static TypeName propertyType(FilterFieldModel filter, FilterOperation op) {
         TypeName fieldType = TypeName.get(filter.type()).box();
         return switch (op) {
-            case IN, NOT_IN -> ParameterizedTypeName.get(ClassName.get("java.util", "List"), fieldType);
+            case IN, NOT_IN -> ParameterizedTypeName.get(ClassName.get("java.util", "List"),
+                filter.isCollection() ? TypeName.get(filter.elementType()) : fieldType);
             case IS_NULL    -> TypeName.BOOLEAN.box();
             default         -> fieldType;
         };
     }
 
     /** OpenAPI description for one filter parameter. */
-    private static String describe(String field, FilterOperation op) {
+    private static String describe(FilterFieldModel filter, FilterOperation op) {
+        String field = filter.name();
+        if (filter.isCollection()) {
+            return switch (op) {
+                case IN      -> field + " has any of (comma-separated)";
+                case NOT_IN  -> field + " has none of (comma-separated)";
+                case IS_NULL -> "true: " + field + " is null or empty, false: " + field + " has elements";
+                default      -> throw new IllegalStateException(op + " on collection " + field);
+            };
+        }
         return switch (op) {
             case EQ      -> field + " equals";
             case NE      -> field + " not equal (includes null)";

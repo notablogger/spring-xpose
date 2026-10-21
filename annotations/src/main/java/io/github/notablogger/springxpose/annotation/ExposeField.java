@@ -19,6 +19,8 @@ import java.lang.annotation.*;
  *   <li>{@code GT}, {@code GTE}, {@code LT}, {@code LTE} need a primitive or {@link Comparable} type.</li>
  *   <li>{@code LIKE} needs a {@link String} field.</li>
  *   <li>{@code IS_NULL} cannot be used on primitive fields.</li>
+ *   <li>Collection fields support only {@code IN} (has any of), {@code NOT_IN} (has none of) and
+ *       {@code IS_NULL} (null or empty); on JPA they must be {@code @ElementCollection}.</li>
  *   <li>JPA relation fields ({@code @ManyToOne} etc.) cannot be filtered.</li>
  * </ul>
  */

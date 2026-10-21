@@ -43,13 +43,14 @@ public enum FilterOperation {
 
     /**
      * Equal to any of the given values: {@code ?status_in=ACTIVE,PENDING} (or the parameter repeated).
-     * An empty list adds no condition.
+     * On a collection field: has any of the values. An empty list adds no condition.
      */
     IN,
 
     /**
      * Equal to none of the given values: {@code ?status_not_in=DELETED,ARCHIVED}.
      * Records where the field is {@code null} are included, as with {@link #NE}.
+     * On a collection field: has none of the values (empty collections match).
      * An empty list adds no condition.
      */
     NOT_IN,
@@ -57,6 +58,7 @@ public enum FilterOperation {
     /**
      * {@code ?deletedAt_is_null=true} matches records where the field is {@code null};
      * {@code false} matches records where it is set. Not supported on primitive fields.
+     * On a collection field: {@code true} matches null or empty collections.
      */
     IS_NULL
 }

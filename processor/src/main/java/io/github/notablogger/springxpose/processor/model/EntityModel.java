@@ -8,6 +8,7 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.MirroredTypeException;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
 import java.util.*;
@@ -108,7 +109,7 @@ public record EntityModel(
             }
 
             filtersValid &= collectFilter(field,
-                isManyToOne || isOneToMany || isManyToMany || isOneToOne, filters, env);
+                isManyToOne || isOneToMany || isManyToMany || isOneToOne, storeType, filters, env);
 
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
             if (isVersion) { versionFieldName = fieldName; }
@@ -187,7 +188,7 @@ public record EntityModel(
 
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
 
-            filtersValid &= collectFilter(field, false, filters, env);
+            filtersValid &= collectFilter(field, false, storeType, filters, env);
 
             List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
                 .filter(am -> am.getAnnotationType().toString().startsWith("jakarta.validation"))
@@ -228,9 +229,10 @@ public record EntityModel(
     /**
      * Adds a {@link FilterFieldModel} for a field carrying {@code @ExposeField} with at least one
      * operation. Reports a compile error and returns {@code false} when an operation does not
-     * fit the field (relation field, range operation on a non-comparable type, LIKE on a non-String).
+     * fit the field (relation field, range operation on a non-comparable type, LIKE on a non-String,
+     * a scalar operation on a collection, ...).
      */
-    private static boolean collectFilter(VariableElement field, boolean isRelation,
+    private static boolean collectFilter(VariableElement field, boolean isRelation, StoreType storeType,
                                          List<FilterFieldModel> filters, ProcessingEnvironment env) {
         ExposeField exposeField = field.getAnnotation(ExposeField.class);
         if (exposeField == null || exposeField.operations().length == 0) return true;
@@ -247,14 +249,44 @@ public record EntityModel(
         }
 
         TypeMirror type = field.asType();
+        boolean isArray = type.getKind() == TypeKind.ARRAY;
+        boolean isCollection = !isArray && isAssignableTo(type, "java.util.Collection", env);
+        TypeMirror elementType = isCollection ? collectionElementType(type) : null;
+
+        if (isCollection && elementType == null) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "@ExposeField: collection field '" + fieldName + "' needs a concrete element type, "
+                + "e.g. List<String>", field);
+            return false;
+        }
+        // Element-wise filtering joins the collection table; a converter-mapped column has none
+        if (isCollection && storeType == StoreType.JPA
+                && field.getAnnotation(jakarta.persistence.ElementCollection.class) == null) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "@ExposeField: collection field '" + fieldName + "' must be an @ElementCollection to be filtered",
+                field);
+            return false;
+        }
+
         boolean valid = true;
         for (FilterOperation op : operations) {
-            String requirement = switch (op) {
-                case EQ, NE, IN, NOT_IN -> null;
-                case GT, GTE, LT, LTE -> isComparable(type, env) ? null : "requires a primitive or Comparable type";
-                case LIKE -> isString(type, env) ? null : "requires a String field";
-                case IS_NULL -> type.getKind().isPrimitive() ? "cannot apply to a primitive field, which is never null" : null;
-            };
+            String requirement;
+            if (isCollection) {
+                requirement = switch (op) {
+                    case IN, NOT_IN, IS_NULL -> null;
+                    default -> "does not apply to a collection — use IN (has any of) or NOT_IN (has none of)";
+                };
+            } else if (isArray) {
+                requirement = op == FilterOperation.IS_NULL ? null
+                    : "does not apply to an array — declare the field as a List to use IN / NOT_IN";
+            } else {
+                requirement = switch (op) {
+                    case EQ, NE, IN, NOT_IN -> null;
+                    case GT, GTE, LT, LTE -> isComparable(type, env) ? null : "requires a primitive or Comparable type";
+                    case LIKE -> isString(type, env) ? null : "requires a String field";
+                    case IS_NULL -> type.getKind().isPrimitive() ? "cannot apply to a primitive field, which is never null" : null;
+                };
+            }
             if (requirement != null) {
                 env.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "@ExposeField: " + op + " is not supported on '" + fieldName + "' of type " + type
@@ -263,8 +295,23 @@ public record EntityModel(
                 valid = false;
             }
         }
-        if (valid) filters.add(new FilterFieldModel(fieldName, type, operations));
+        if (valid) filters.add(new FilterFieldModel(fieldName, type, elementType, operations));
         return valid;
+    }
+
+    /** Element type of a {@code Collection<E>} field, or {@code null} for a raw or wildcard element type. */
+    private static TypeMirror collectionElementType(TypeMirror type) {
+        if (type instanceof DeclaredType dt && dt.getTypeArguments().size() == 1) {
+            TypeMirror element = dt.getTypeArguments().get(0);
+            if (element.getKind() == TypeKind.DECLARED) return element;
+        }
+        return null;
+    }
+
+    private static boolean isAssignableTo(TypeMirror type, String typeName, ProcessingEnvironment env) {
+        TypeMirror target = env.getElementUtils().getTypeElement(typeName).asType();
+        return env.getTypeUtils().isAssignable(
+            env.getTypeUtils().erasure(type), env.getTypeUtils().erasure(target));
     }
 
     private static boolean isString(TypeMirror type, ProcessingEnvironment env) {

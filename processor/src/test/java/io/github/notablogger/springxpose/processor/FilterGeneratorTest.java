@@ -80,10 +80,15 @@ class FilterGeneratorTest {
             @ExposeField(operations = {FilterOperation.GT, FilterOperation.LTE, FilterOperation.IS_NULL})
             private java.time.Instant createdAt;
 
+            @ExposeField(operations = {FilterOperation.IN, FilterOperation.NOT_IN, FilterOperation.IS_NULL})
+            private java.util.List<String> labels;
+
             public String getId() { return id; }
             public void setId(String id) { this.id = id; }
             public String getAuthor() { return author; }
             public void setAuthor(String author) { this.author = author; }
+            public java.util.List<String> getLabels() { return labels; }
+            public void setLabels(java.util.List<String> labels) { this.labels = labels; }
             public java.time.Instant getCreatedAt() { return createdAt; }
             public void setCreatedAt(java.time.Instant createdAt) { this.createdAt = createdAt; }
         }
@@ -259,6 +264,107 @@ class FilterGeneratorTest {
         assertTrue(controller.contains("mongoTemplate.find(NoteSpec.withFilters(filters)"), controller);
     }
 
+    // ── Collection fields ─────────────────────────────────────────────────────
+
+    private static final JavaFileObject PRODUCT_WITH_TAGS = product("""
+            @ElementCollection
+            @ExposeField(operations = {FilterOperation.IN, FilterOperation.NOT_IN, FilterOperation.IS_NULL})
+            private java.util.List<String> tags;
+
+            @ElementCollection
+            @ExposeField(operations = FilterOperation.IN)
+            private java.util.Set<Integer> codes;
+            """);
+
+    @Test
+    void collectionInAndNotInBindTheElementType() throws Exception {
+        Compilation c = compile(PRODUCT_WITH_TAGS);
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductFilterParams");
+        assertTrue(src.contains("@BindParam(\"tags_in\") List<String> tagsIn"), src);
+        assertTrue(src.contains("@BindParam(\"tags_not_in\") List<String> tagsNotIn"), src);
+        assertTrue(src.contains("@BindParam(\"tags_is_null\") Boolean tagsIsNull"), src);
+        assertTrue(src.contains("@BindParam(\"codes_in\") List<Integer> codesIn"), src);
+        assertTrue(src.contains("tags has any of (comma-separated)"), src);
+    }
+
+    @Test
+    void jpaCollectionUsesExistsSubquery() throws Exception {
+        Compilation c = compile(PRODUCT_WITH_TAGS);
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductSpec");
+        assertTrue(src.contains("predicates.add(tagsHasAny(root, query, cb, f.getTagsIn()))"), src);
+        assertTrue(src.contains("predicates.add(cb.not(tagsHasAny(root, query, cb, f.getTagsNotIn())))"), src);
+        assertTrue(src.contains("cb.isEmpty(root.<List<String>>get(\"tags\")) : cb.isNotEmpty(root.<List<String>>get(\"tags\"))"), src);
+        assertTrue(src.contains("Root<Product> correlated = sub.correlate(root)"), src);
+        assertTrue(src.contains("sub.select(cb.literal(1)).where(correlated.join(\"tags\").in(values))"), src);
+        assertTrue(src.contains("predicates.add(codesHasAny(root, query, cb, f.getCodesIn()))"), src);
+    }
+
+    @Test
+    void mongoCollectionUsesArrayOperators() throws Exception {
+        Compilation c = compile(NOTE_DOCUMENT);
+
+        assertThat(c).succeeded();
+        String spec = source(c, "com.example.document.generated.NoteSpec");
+        assertTrue(spec.contains("Criteria.where(\"labels\").in(f.getLabelsIn())"), spec);
+        assertTrue(spec.contains("Criteria.where(\"labels\").nin(f.getLabelsNotIn())"), spec);
+        assertTrue(spec.contains("Criteria.where(\"labels.0\").exists(!f.getLabelsIsNull())"), spec);
+        assertTrue(source(c, "com.example.document.generated.NoteFilterParams")
+            .contains("@BindParam(\"labels_in\") List<String> labelsIn"));
+    }
+
+    @Test
+    void scalarOperationsOnCollectionFail() {
+        Compilation c = compile(product("""
+            @ElementCollection
+            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.LIKE, FilterOperation.GT})
+            private java.util.List<String> tags;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("EQ does not apply to a collection — use IN (has any of) or NOT_IN (has none of)");
+        assertThat(c).hadErrorContaining("LIKE does not apply to a collection");
+        assertThat(c).hadErrorContaining("GT does not apply to a collection");
+    }
+
+    @Test
+    void jpaCollectionWithoutElementCollectionFails() {
+        Compilation c = compile(product("""
+            @ExposeField(operations = FilterOperation.IN)
+            private java.util.List<String> tags;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("collection field 'tags' must be an @ElementCollection to be filtered");
+    }
+
+    @Test
+    void rawCollectionFails() {
+        Compilation c = compile(product("""
+            @ElementCollection
+            @ExposeField(operations = FilterOperation.IN)
+            private java.util.List tags;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("collection field 'tags' needs a concrete element type");
+    }
+
+    @Test
+    void arrayFieldOnlySupportsIsNull() {
+        Compilation c = compile(product("""
+            @ExposeField(operations = {FilterOperation.IN, FilterOperation.IS_NULL})
+            private String[] codes;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("IN does not apply to an array — declare the field as a List");
+        assertThat(c).hadErrorCount(1);
+    }
+
     // ── Repository & controller wiring ────────────────────────────────────────
 
     @Test
@@ -302,11 +408,11 @@ class FilterGeneratorTest {
     void rangeOperationOnNonComparableTypeFails() {
         Compilation c = compile(product("""
             @ExposeField(operations = FilterOperation.GT)
-            private java.util.List<String> tags;
+            private java.util.Map<String, String> attributes;
             """));
 
         assertThat(c).failed();
-        assertThat(c).hadErrorContaining("GT is not supported on 'tags'");
+        assertThat(c).hadErrorContaining("GT is not supported on 'attributes'");
         assertThat(c).hadErrorContaining("requires a primitive or Comparable type");
     }
 

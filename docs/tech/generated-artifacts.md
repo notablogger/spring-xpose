@@ -276,6 +276,7 @@ public final class ProductFilterParams {
 Each non-null filter property adds one condition; conditions are AND-ed.
 
 - **JPA** — returns `Specification<Entity>`, executed with `repository.findAll(spec)` / `findAll(spec, pageable)`. A `likePattern` helper is added when `LIKE` is used; it lower-cases the value and escapes `%`, `_` and `\`.
+- **Collection fields** (JPA `@ElementCollection`) — `IN` / `NOT_IN` call a generated `<field>HasAny(root, query, cb, values)` helper: an `EXISTS` subquery that correlates the outer root and joins the collection, so matching rows are not duplicated.
 - **MongoDB** — returns a `Query` built from `Criteria`, executed with `mongoTemplate.find(...)` (and `count(...)` for pageable). `LIKE` uses `Pattern.quote(value)` with the `i` option.
 
 ```java

@@ -13,8 +13,15 @@ import java.util.Set;
 public record FilterFieldModel(
     String name,
     TypeMirror type,
+    /** Element type when the field is a {@code Collection} ({@code String} for {@code List<String>}), else {@code null}. */
+    TypeMirror elementType,
     Set<FilterOperation> operations
 ) {
+    /** True for collection fields, where IN / NOT_IN mean "has any of" / "has none of". */
+    public boolean isCollection() {
+        return elementType != null;
+    }
+
     /** Query parameter name: {@code price} for EQ, {@code price_gt} for GT, {@code status_not_in} for NOT_IN, etc. */
     public String paramName(FilterOperation op) {
         return op == FilterOperation.EQ ? name : name + "_" + suffix(op);

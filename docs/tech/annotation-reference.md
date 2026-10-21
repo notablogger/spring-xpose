@@ -192,7 +192,27 @@ GET /api/products?price_gt=10&price_lt=100&name_like=widget
 - **`IS_NULL`** takes a boolean: `?deletedAt_is_null=true` → field is null, `false` → field is set. Not allowed on primitive fields, which are never null.
 - **`LIKE` is a case-insensitive "contains"**. `%`, `_` and regex characters in the value are matched literally — `?name_like=50%` does not match `500`.
 - **A value of the wrong type** (`?price_gt=abc`) is rejected with `400 Bad Request` before any query runs.
-- **Compile-time errors** for operations that don't fit the field: range operations on non-comparable types, `LIKE` on non-`String` fields, `IS_NULL` on primitives, filters on JPA relation fields, and two filters mapping to the same parameter name.
+
+### Collection fields
+
+On a collection field — a JPA `@ElementCollection` or a MongoDB array — `IN`, `NOT_IN` and `IS_NULL` work on the elements:
+
+```java
+@ElementCollection
+@ExposeField(operations = {IN, NOT_IN, IS_NULL})
+private List<String> tags;    // ?tags_in=sale,new  ?tags_not_in=clearance  ?tags_is_null=true
+```
+
+| Operation | Meaning | JPA | MongoDB |
+|---|---|---|---|
+| `IN` | has **any** of the values | `EXISTS` subquery on the collection | `in` |
+| `NOT_IN` | has **none** of the values (empty collections match) | `NOT EXISTS` | `nin` |
+| `IS_NULL` | `true`: null or empty, `false`: has elements | `isEmpty` / `isNotEmpty` | `tags.0` does not exist / exists |
+
+A single value is just `?tags_in=sale`. The parameter binds to a `List` of the element type. JPA uses a subquery rather than a join, so a row that matches several values is returned once and paging totals stay correct.
+
+Other operations (`EQ`, `NE`, ranges, `LIKE`) are compile errors on collections. JPA collections must be `@ElementCollection` — a collection stored in one column through a converter cannot be filtered element-wise. Arrays support only `IS_NULL`; declare the field as a `List` to filter its elements.
+- **Compile-time errors** for operations that don't fit the field: range operations on non-comparable types, `LIKE` on non-`String` fields, `IS_NULL` on primitives, scalar operations on collections, filters on JPA relation fields, and two filters mapping to the same parameter name.
 
 Generated code: `<Entity>FilterParams` (bound with `@ModelAttribute`) and `<Entity>Spec` (JPA `Specification` or MongoDB `Query`). JPA repositories also extend `JpaSpecificationExecutor`. See [`generated-artifacts.md`](generated-artifacts.md).
 
