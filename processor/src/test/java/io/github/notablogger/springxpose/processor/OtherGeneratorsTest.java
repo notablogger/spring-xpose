@@ -86,6 +86,45 @@ class OtherGeneratorsTest {
     );
 
     @Test
+    void dtoGenerators_keepGenericAndArrayFieldTypes() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.entity.Article",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+                import java.util.*;
+
+                @Entity
+                @ExposeEntity(path = "articles")
+                public class Article {
+                    @Id @GeneratedValue private Long id;
+                    @ElementCollection private List<String> tags;
+                    @ElementCollection private Set<Integer> scores;
+                    private byte[] thumbnail;
+
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public List<String> getTags() { return tags; }
+                    public void setTags(List<String> tags) { this.tags = tags; }
+                    public Set<Integer> getScores() { return scores; }
+                    public void setScores(Set<Integer> scores) { this.scores = scores; }
+                    public byte[] getThumbnail() { return thumbnail; }
+                    public void setThumbnail(byte[] thumbnail) { this.thumbnail = thumbnail; }
+                }
+                """));
+
+        assertThat(c).succeeded();
+        for (String dto : new String[] {"ArticleDto", "ArticleRequestDto"}) {
+            String src = c.generatedSourceFile("com.example.entity.generated." + dto)
+                .orElseThrow().getCharContent(false).toString();
+            assertTrue(src.contains("private List<String> tags;"), src);
+            assertTrue(src.contains("private Set<Integer> scores;"), src);
+            assertTrue(src.contains("private byte[] thumbnail;"), src);
+        }
+    }
+
+    @Test
     void repositoryGenerator_extendsJpaRepositoryWithEntityAndId() throws Exception {
         Compilation c = compileBook();
 

@@ -47,7 +47,8 @@ public class RequestDtoGenerator {
             if (model.hasVersion() && field.name().equals(model.versionFieldName())) continue; // skip @Version field
             if (model.ignoredFields().contains(field.name())) continue;
 
-            TypeName typeName = resolveTypeName(field.typeName());
+            // From the TypeMirror, not the type's text: keeps generics (List<String>) and arrays
+            TypeName typeName = TypeName.get(field.type()).box();
             FieldSpec.Builder fieldBuilder = FieldSpec.builder(typeName, field.name(), Modifier.PRIVATE);
 
             // Re-apply jakarta.validation annotations from the entity field
@@ -81,17 +82,6 @@ public class RequestDtoGenerator {
         }
     }
 
-    private static TypeName resolveTypeName(String rawTypeName) {
-        String typeName = rawTypeName.replaceAll("@\\S+\\s*", "").trim();
-        return switch (typeName) {
-            case "long", "java.lang.Long"      -> TypeName.LONG.box();
-            case "int", "java.lang.Integer"    -> TypeName.INT.box();
-            case "double", "java.lang.Double"  -> TypeName.DOUBLE.box();
-            case "boolean", "java.lang.Boolean"-> TypeName.BOOLEAN.box();
-            case "float", "java.lang.Float"    -> TypeName.FLOAT.box();
-            default -> ClassName.bestGuess(typeName);
-        };
-    }
 
     private static MethodSpec getter(String name, TypeName type) {
         String prefix = type.equals(TypeName.BOOLEAN.box()) ? "is" : "get";

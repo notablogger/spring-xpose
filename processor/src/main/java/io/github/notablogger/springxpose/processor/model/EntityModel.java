@@ -122,7 +122,7 @@ public record EntityModel(
                 List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
                     .filter(am -> am.getAnnotationType().toString().startsWith("jakarta.validation"))
                     .toList();
-                fields.add(new FieldModel(fieldName, fieldType, isId, validationAnnotations));
+                fields.add(new FieldModel(fieldName, fieldType, isId, validationAnnotations, field.asType()));
             }
         }
 
@@ -192,7 +192,7 @@ public record EntityModel(
             List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
                 .filter(am -> am.getAnnotationType().toString().startsWith("jakarta.validation"))
                 .toList();
-            fields.add(new FieldModel(fieldName, fieldType, isId, validationAnnotations));
+            fields.add(new FieldModel(fieldName, fieldType, isId, validationAnnotations, field.asType()));
         }
 
         if (idFieldName == null) {

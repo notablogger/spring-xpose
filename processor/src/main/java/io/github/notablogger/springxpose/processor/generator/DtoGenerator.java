@@ -43,7 +43,8 @@ public class DtoGenerator {
         // but respects ignoredFields for everything else)
         for (FieldModel field : model.fields()) {
             if (!field.isId() && model.ignoredFields().contains(field.name())) continue;
-            TypeName typeName = resolveTypeName(field.typeName());
+            // From the TypeMirror, not the type's text: keeps generics (List<String>) and arrays
+            TypeName typeName = TypeName.get(field.type()).box();
             dto.addField(typeName, field.name(), Modifier.PRIVATE);
             dto.addMethod(getter(field.name(), typeName));
             dto.addMethod(setter(field.name(), typeName));
@@ -80,20 +81,6 @@ public class DtoGenerator {
         }
     }
 
-    private static TypeName resolveTypeName(String rawTypeName) {
-        // Strip inline annotation tokens e.g. "java.lang.@jakarta.validation.constraints.NotBlank String"
-        // → "java.lang.String"
-        String typeName = rawTypeName.replaceAll("@\\S+\\s*", "").trim();
-
-        return switch (typeName) {
-            case "long", "java.lang.Long"       -> TypeName.LONG.box();
-            case "int", "java.lang.Integer"      -> TypeName.INT.box();
-            case "double", "java.lang.Double"    -> TypeName.DOUBLE.box();
-            case "boolean", "java.lang.Boolean"  -> TypeName.BOOLEAN.box();
-            case "float", "java.lang.Float"      -> TypeName.FLOAT.box();
-            default -> ClassName.bestGuess(typeName);
-        };
-    }
 
     private static MethodSpec getter(String name, TypeName type) {
         String prefix = type.equals(TypeName.BOOLEAN.box()) ? "is" : "get";
