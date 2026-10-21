@@ -249,17 +249,16 @@ public record EntityModel(
         TypeMirror type = field.asType();
         boolean valid = true;
         for (FilterOperation op : operations) {
-            boolean fits = switch (op) {
-                case EQ, NE -> true;
-                case GT, GTE, LT, LTE -> isComparable(type, env);
-                case LIKE -> isString(type, env);
+            String requirement = switch (op) {
+                case EQ, NE, IN, NOT_IN -> null;
+                case GT, GTE, LT, LTE -> isComparable(type, env) ? null : "requires a primitive or Comparable type";
+                case LIKE -> isString(type, env) ? null : "requires a String field";
+                case IS_NULL -> type.getKind().isPrimitive() ? "cannot apply to a primitive field, which is never null" : null;
             };
-            if (!fits) {
+            if (requirement != null) {
                 env.getMessager().printMessage(Diagnostic.Kind.ERROR,
                     "@ExposeField: " + op + " is not supported on '" + fieldName + "' of type " + type
-                    + (op == FilterOperation.LIKE
-                        ? " — LIKE requires a String field"
-                        : " — " + op + " requires a primitive or Comparable type"),
+                    + " — " + op + " " + requirement,
                     field);
                 valid = false;
             }

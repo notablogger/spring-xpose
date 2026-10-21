@@ -33,7 +33,11 @@ import java.io.IOException;
  * LT     cb.lessThan                               Criteria.lt
  * LTE    cb.lessThanOrEqualTo                      Criteria.lte
  * LIKE   cb.like(cb.lower(..), %escaped%)          Criteria.regex(Pattern.quote(..), "i")
+ * IN     path.in(list)                             Criteria.in
+ * NOT_IN NOT path.in(list) OR cb.isNull           Criteria.nin  (matches null/missing too)
+ * IS_NULL cb.isNull / cb.isNotNull                 Criteria.is(null) / ne(null)
  * </pre>
+ * IN / NOT_IN apply only when the list is non-empty.
  *
  * <p>Example JPA output for {@code @ExposeField(operations = {EQ, GT}) BigDecimal price}:
  * <pre>
@@ -122,10 +126,15 @@ public class SpecificationGenerator {
                     case LTE  -> CodeBlock.of("cb.lessThanOrEqualTo(root.<$T>get($S), f.$L())", type, field, getter);
                     case LIKE -> CodeBlock.of("cb.like(cb.lower(root.<$T>get($S)), likePattern(f.$L()), '\\\\')",
                                      String.class, field, getter);
+                    case IN   -> CodeBlock.of("root.get($S).in(f.$L())", field, getter);
+                    case NOT_IN -> CodeBlock.of("cb.or(cb.not(root.get($S).in(f.$L())), cb.isNull(root.get($S)))",
+                                     field, getter, field);
+                    case IS_NULL -> CodeBlock.of("f.$L() ? cb.isNull(root.get($S)) : cb.isNotNull(root.get($S))",
+                                     getter, field, field);
                 };
                 usesLike |= op == FilterOperation.LIKE;
                 withFilters
-                    .addCode("    if (f.$L() != null)\n", getter)
+                    .addCode("    if ($L)\n", guard(op, getter))
                     .addCode("        predicates.add($L);\n", condition);
             }
         }
@@ -187,9 +196,13 @@ public class SpecificationGenerator {
                     case LTE  -> CodeBlock.of("$T.where($S).lte(f.$L())", criteriaClass, field, getter);
                     case LIKE -> CodeBlock.of("$T.where($S).regex($T.quote(f.$L()), \"i\")",
                                      criteriaClass, field, pattern, getter);
+                    case IN   -> CodeBlock.of("$T.where($S).in(f.$L())", criteriaClass, field, getter);
+                    case NOT_IN -> CodeBlock.of("$T.where($S).nin(f.$L())", criteriaClass, field, getter);
+                    case IS_NULL -> CodeBlock.of("f.$L() ? $T.where($S).is(null) : $T.where($S).ne(null)",
+                                     getter, criteriaClass, field, criteriaClass, field);
                 };
                 withFilters
-                    .beginControlFlow("if (f.$L() != null)", getter)
+                    .beginControlFlow("if ($L)", guard(op, getter))
                     .addStatement("conditions.add($L)", condition)
                     .endControlFlow();
             }
@@ -213,6 +226,13 @@ public class SpecificationGenerator {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    /** Condition under which a filter param applies: set, and for IN / NOT_IN also non-empty. */
+    private static CodeBlock guard(FilterOperation op, String getter) {
+        return op == FilterOperation.IN || op == FilterOperation.NOT_IN
+            ? CodeBlock.of("f.$L() != null && !f.$L().isEmpty()", getter, getter)
+            : CodeBlock.of("f.$L() != null", getter);
+    }
 
     private void write(EntityModel model, TypeSpec spec) {
         try {

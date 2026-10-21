@@ -15,16 +15,24 @@ public record FilterFieldModel(
     TypeMirror type,
     Set<FilterOperation> operations
 ) {
-    /** Query parameter name: {@code price} for EQ, {@code price_gt} for GT, etc. */
+    /** Query parameter name: {@code price} for EQ, {@code price_gt} for GT, {@code status_not_in} for NOT_IN, etc. */
     public String paramName(FilterOperation op) {
-        return op == FilterOperation.EQ ? name : name + "_" + op.name().toLowerCase(Locale.ROOT);
+        return op == FilterOperation.EQ ? name : name + "_" + suffix(op);
     }
 
-    /** Java property name in {@code FilterParams}: {@code price} for EQ, {@code priceGt} for GT, etc. */
+    /** Java property name in {@code FilterParams}: {@code price} for EQ, {@code priceGt} for GT, {@code statusNotIn} for NOT_IN, etc. */
     public String propertyName(FilterOperation op) {
         if (op == FilterOperation.EQ) return name;
-        String suffix = op.name().toLowerCase(Locale.ROOT);
-        return name + Character.toUpperCase(suffix.charAt(0)) + suffix.substring(1);
+        StringBuilder property = new StringBuilder(name);
+        for (String part : suffix(op).split("_")) {
+            property.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return property.toString();
+    }
+
+    /** Query suffix for an operation: its lower-cased name, except IS_NULL → {@code null} ({@code ?deletedAt_null=true}). */
+    private static String suffix(FilterOperation op) {
+        return op == FilterOperation.IS_NULL ? "null" : op.name().toLowerCase(Locale.ROOT);
     }
 
     /** Getter name in {@code FilterParams}: {@code getPrice}, {@code getPriceGt}, etc. */

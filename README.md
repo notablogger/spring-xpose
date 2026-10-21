@@ -245,7 +245,7 @@ private String name;            // ?name=Widget   ?name_like=widg
 @ExposeField(operations = {FilterOperation.GT, FilterOperation.LT})
 private BigDecimal price;       // ?price_gt=10&price_lt=100
 ```
-Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains). All filters are optional and AND-ed.
+Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`?status_in=A,B`), `IS_NULL` (`?deletedAt_null=true`). All filters are optional and AND-ed.
 
 → Full attribute reference, operation table, auth types, `@ExposeDocument` guide, relation modes, request DTO rules, and custom mapper guide, `@ExposeField` filters: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
 

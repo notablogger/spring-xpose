@@ -21,7 +21,8 @@ import java.io.IOException;
  *   <li>{@code @Parameter(name = ...)} on the field — springdoc documents {@code price_gt},
  *       not the Java name.</li>
  * </ul>
- * Primitive types are boxed so absent parameters bind as {@code null} (ignored).
+ * Primitive types are boxed so absent parameters bind as {@code null} (ignored). IN / NOT_IN
+ * properties are a {@code List} of the field type; IS_NULL properties are {@code Boolean}.
  *
  * <p>Example output for {@code @ExposeField(operations = {EQ, GT}) BigDecimal price}:
  * <pre>
@@ -60,8 +61,8 @@ public class FilterParamsGenerator {
         MethodSpec.Builder ctor = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC);
 
         for (FilterFieldModel filter : model.filters()) {
-            TypeName type = TypeName.get(filter.type()).box();
             for (FilterOperation op : filter.operations()) {
+                TypeName type = propertyType(filter, op);
                 String property = filter.propertyName(op);
                 String param    = filter.paramName(op);
 
@@ -100,16 +101,32 @@ public class FilterParamsGenerator {
         }
     }
 
+    /**
+     * Java type of one filter property: the boxed field type, a {@code List} of it for IN / NOT_IN
+     * (Spring splits {@code ?status_in=A,B} into the list), or {@code Boolean} for IS_NULL.
+     */
+    private static TypeName propertyType(FilterFieldModel filter, FilterOperation op) {
+        TypeName fieldType = TypeName.get(filter.type()).box();
+        return switch (op) {
+            case IN, NOT_IN -> ParameterizedTypeName.get(ClassName.get("java.util", "List"), fieldType);
+            case IS_NULL    -> TypeName.BOOLEAN.box();
+            default         -> fieldType;
+        };
+    }
+
     /** OpenAPI description for one filter parameter. */
     private static String describe(String field, FilterOperation op) {
         return switch (op) {
-            case EQ   -> field + " equals";
-            case NE   -> field + " not equal (includes null)";
-            case GT   -> field + " greater than";
-            case GTE  -> field + " greater than or equal";
-            case LT   -> field + " less than";
-            case LTE  -> field + " less than or equal";
-            case LIKE -> field + " contains (case-insensitive)";
+            case EQ      -> field + " equals";
+            case NE      -> field + " not equal (includes null)";
+            case GT      -> field + " greater than";
+            case GTE     -> field + " greater than or equal";
+            case LT      -> field + " less than";
+            case LTE     -> field + " less than or equal";
+            case LIKE    -> field + " contains (case-insensitive)";
+            case IN      -> field + " is one of (comma-separated)";
+            case NOT_IN  -> field + " is none of (comma-separated, includes null)";
+            case IS_NULL -> "true: " + field + " is null, false: " + field + " is set";
         };
     }
 }

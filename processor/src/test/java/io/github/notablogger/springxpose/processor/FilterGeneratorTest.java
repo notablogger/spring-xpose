@@ -48,8 +48,11 @@ class FilterGeneratorTest {
             @ExposeField(operations = {FilterOperation.GT, FilterOperation.LT})
             private int stock;
 
-            @ExposeField(operations = FilterOperation.EQ)
+            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.IN, FilterOperation.NOT_IN})
             private Status status;
+
+            @ExposeField(operations = FilterOperation.IS_NULL)
+            private java.time.Instant deletedAt;
 
             @ExposeField
             private String sku;
@@ -70,10 +73,11 @@ class FilterGeneratorTest {
         public class Note {
             @Id private String id;
 
-            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.NE, FilterOperation.LIKE})
+            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.NE, FilterOperation.LIKE,
+                                       FilterOperation.IN, FilterOperation.NOT_IN})
             private String author;
 
-            @ExposeField(operations = {FilterOperation.GT, FilterOperation.LTE})
+            @ExposeField(operations = {FilterOperation.GT, FilterOperation.LTE, FilterOperation.IS_NULL})
             private java.time.Instant createdAt;
 
             public String getId() { return id; }
@@ -134,7 +138,8 @@ class FilterGeneratorTest {
         for (String getter : new String[] {
                 "getName()", "getNameNe()", "getNameLike()",
                 "getPrice()", "getPriceGt()", "getPriceGte()", "getPriceLt()", "getPriceLte()",
-                "getStockGt()", "getStockLt()", "getStatus()"}) {
+                "getStockGt()", "getStockLt()", "getStatus()", "getStatusIn()", "getStatusNotIn()",
+                "getDeletedAtNull()"}) {
             assertTrue(src.contains(getter), "FilterParams must have " + getter);
         }
         assertFalse(src.contains("getSku"), "@ExposeField without operations must not be filterable");
@@ -166,6 +171,17 @@ class FilterGeneratorTest {
         assertTrue(src.contains("Integer stockGt"), "int stock must become Integer in FilterParams");
     }
 
+    @Test
+    void inAndNotInAreListsAndIsNullIsBoolean() throws Exception {
+        Compilation c = compile(PRODUCT);
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductFilterParams");
+        assertTrue(src.contains("@BindParam(\"status_in\") List<Product.Status> statusIn"), src);
+        assertTrue(src.contains("@BindParam(\"status_not_in\") List<Product.Status> statusNotIn"), src);
+        assertTrue(src.contains("@BindParam(\"deletedAt_null\") Boolean deletedAtNull"), src);
+    }
+
     // ── JPA Spec ──────────────────────────────────────────────────────────────
 
     @Test
@@ -182,6 +198,19 @@ class FilterGeneratorTest {
         assertTrue(src.contains("cb.lessThanOrEqualTo(root.<BigDecimal>get(\"price\"), f.getPriceLte())"), src);
         assertTrue(src.contains("cb.greaterThan(root.<Integer>get(\"stock\"), f.getStockGt())"), src);
         assertTrue(src.contains("cb.like(cb.lower(root.<String>get(\"name\")), likePattern(f.getNameLike()), '\\\\')"), src);
+        assertTrue(src.contains("root.get(\"status\").in(f.getStatusIn())"), src);
+        assertTrue(src.contains("cb.or(cb.not(root.get(\"status\").in(f.getStatusNotIn())), cb.isNull(root.get(\"status\")))"), src);
+        assertTrue(src.contains("f.getDeletedAtNull() ? cb.isNull(root.get(\"deletedAt\")) : cb.isNotNull(root.get(\"deletedAt\"))"), src);
+    }
+
+    @Test
+    void emptyInListAddsNoCondition() throws Exception {
+        Compilation c = compile(PRODUCT);
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductSpec");
+        assertTrue(src.contains("if (f.getStatusIn() != null && !f.getStatusIn().isEmpty())"), src);
+        assertTrue(src.contains("if (f.getStatusNotIn() != null && !f.getStatusNotIn().isEmpty())"), src);
     }
 
     @Test
@@ -222,6 +251,9 @@ class FilterGeneratorTest {
         assertTrue(src.contains("Criteria.where(\"author\").regex(Pattern.quote(f.getAuthorLike()), \"i\")"), src);
         assertTrue(src.contains("Criteria.where(\"createdAt\").gt(f.getCreatedAtGt())"), src);
         assertTrue(src.contains("Criteria.where(\"createdAt\").lte(f.getCreatedAtLte())"), src);
+        assertTrue(src.contains("Criteria.where(\"author\").in(f.getAuthorIn())"), src);
+        assertTrue(src.contains("Criteria.where(\"author\").nin(f.getAuthorNotIn())"), src);
+        assertTrue(src.contains("f.getCreatedAtNull() ? Criteria.where(\"createdAt\").is(null) : Criteria.where(\"createdAt\").ne(null)"), src);
 
         String controller = source(c, "com.example.document.generated.NoteController");
         assertTrue(controller.contains("mongoTemplate.find(NoteSpec.withFilters(filters)"), controller);
@@ -287,6 +319,17 @@ class FilterGeneratorTest {
 
         assertThat(c).failed();
         assertThat(c).hadErrorContaining("LIKE requires a String field");
+    }
+
+    @Test
+    void isNullOnPrimitiveFails() {
+        Compilation c = compile(product("""
+            @ExposeField(operations = FilterOperation.IS_NULL)
+            private int stock;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("IS_NULL cannot apply to a primitive field");
     }
 
     @Test

@@ -249,7 +249,7 @@ CSRF is disabled — REST APIs are stateless and do not use cookie-based session
 **Type:** `final` class, bound from query parameters via `@ModelAttribute` (plus `@ParameterObject` when springdoc is present)  
 **Generated when:** at least one field has `@ExposeField(operations = ...)`
 
-One property per (field, operation). Primitive field types are boxed, so an absent parameter is `null` and adds no condition. Suffixed parameters carry two annotations — `@BindParam` so Spring MVC binds `?price_gt=`, and `@Parameter(name = ...)` so springdoc documents `price_gt` rather than the Java name:
+One property per (field, operation). Primitive field types are boxed, so an absent parameter is `null` and adds no condition. `IN` / `NOT_IN` properties are a `List` of the field type (an empty list also adds no condition); `IS_NULL` properties are `Boolean`. Suffixed parameters carry two annotations — `@BindParam` so Spring MVC binds `?price_gt=`, and `@Parameter(name = ...)` so springdoc documents `price_gt` rather than the Java name:
 
 ```java
 public final class ProductFilterParams {
