@@ -246,7 +246,7 @@ public class Note {
 Add springdoc to your dependencies:
 
 ```groovy
-implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
+implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.3'
 ```
 
 All generated controllers are annotated with `@Tag`, `@Operation`, and `@ApiResponse`. Secured endpoints automatically show a 🔒 lock icon in Swagger UI.
