@@ -18,6 +18,7 @@ public class RestControllerGenerator {
     private static final ClassName OA_API_RESPONSES = ClassName.get("io.swagger.v3.oas.annotations.responses", "ApiResponses");
     private static final ClassName OA_PARAMETER     = ClassName.get("io.swagger.v3.oas.annotations", "Parameter");
     private static final ClassName OA_REQUEST_BODY  = ClassName.get("io.swagger.v3.oas.annotations.parameters", "RequestBody");
+    private static final String    SPRINGDOC_PARAMETER_OBJECT = "org.springdoc.core.annotations.ParameterObject";
     private static final ClassName OA_SECURITY_REQ  = ClassName.get("io.swagger.v3.oas.annotations.security", "SecurityRequirement");
 
     private final ProcessingEnvironment processingEnv;
@@ -96,6 +97,12 @@ public class RestControllerGenerator {
             if (model.pageable()) {
                 // Pageable variant — returns Page<Dto>
                 ClassName pageableClass = ClassName.get("org.springframework.data.domain", "Pageable");
+                // Without @ParameterObject springdoc documents one required "pageable" object
+                // instead of the optional page / size / sort query parameters
+                ParameterSpec.Builder pageableParam = ParameterSpec.builder(pageableClass, "pageable");
+                if (processingEnv.getElementUtils().getTypeElement(SPRINGDOC_PARAMETER_OBJECT) != null) {
+                    pageableParam.addAnnotation(ClassName.bestGuess(SPRINGDOC_PARAMETER_OBJECT));
+                }
                 ClassName pageClass     = ClassName.get("org.springframework.data.domain", "Page");
                 TypeName  returnType    = ParameterizedTypeName.get(responseEntity,
                     ParameterizedTypeName.get(pageClass, dtoClass));
@@ -112,7 +119,7 @@ public class RestControllerGenerator {
                         .build())
                     .addModifiers(Modifier.PUBLIC)
                     .returns(returnType)
-                    .addParameter(pageableClass, "pageable")
+                    .addParameter(pageableParam.build())
                     .addStatement("$T.set($T.Mode.LIST)", serCtx, serCtx)
                     .beginControlFlow("try")
                     .addStatement("return $T.ok(repository.findAll(pageable).map(mapper::toDto))", responseEntity)
