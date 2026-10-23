@@ -27,11 +27,6 @@ public @interface ExposeEntity {
 
     String[] writeRoles() default {};
 
-    /**
-     * Entity field names to exclude from both the generated response DTO and request DTO.
-     * The entity itself retains these fields for persistence.
-     */
-    String[] ignoredFields() default {};
 
     /**
      * When {@code true}, the generated {@code findAll} endpoint accepts Spring Data

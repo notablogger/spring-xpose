@@ -68,11 +68,6 @@ public @interface ExposeDocument {
     /** Roles for POST / PUT / DELETE — overrides {@code roles} for write operations. */
     String[] writeRoles() default {};
 
-    /**
-     * Document field names to exclude from both the generated response DTO and request DTO.
-     * The document class itself retains these fields for persistence.
-     */
-    String[] ignoredFields() default {};
 
     /**
      * When {@code true}, the generated {@code findAll} endpoint accepts Spring Data

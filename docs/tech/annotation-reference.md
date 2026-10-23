@@ -1,11 +1,12 @@
 # Annotation Reference — spring-xpose
 
-spring-xpose provides **two complementary annotations** for compile-time REST API generation:
+spring-xpose provides **two complementary class-level annotations** for compile-time REST API generation, plus one field-level annotation:
 
 | Annotation | Target | Persistence | Use when |
 |---|---|---|---|
 | `@ExposeEntity` | JPA entity class (`@Entity`) | always JPA | SQL databases — Postgres, MySQL, H2, … |
 | `@ExposeDocument` | MongoDB document class (`@Document`) | always MongoDB | MongoDB document collections |
+| `@ExposeField` | field of either | both | hiding a field from the API, query filters on `findAll` — see [hidden](#exposefieldhidden--true--hiding-fields-from-the-api), [filters](#exposefield--filtering-findall) |
 
 The annotation you choose determines the persistence backend — there is no `store` parameter to set.
 `@ExposeDocument` additionally omits the JPA-specific `relationMode` attribute (MongoDB documents do not have JPA relations).
@@ -24,10 +25,13 @@ The annotation you choose determines the persistence backend — there is no `st
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    ignoredFields = {"internalNote", "auditTrail"},  // hidden from both response AND request DTO
     customMapper  = MyOrderMapper.class              // optional — omit for MapStruct auto-impl
 )
-public class Order { ... }
+public class Order {
+    @ExposeField(hidden = true) private String internalNote;   // hidden from both response AND request DTO
+    @ExposeField(hidden = true) private String auditTrail;
+    ...
+}
 ```
 
 ## `@ExposeDocument` — Full example
@@ -41,7 +45,6 @@ public class Order { ... }
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    ignoredFields = {"internalTag"},
     customMapper  = MyNoteMapper.class    // optional
 )
 public class Note {
@@ -66,7 +69,6 @@ public class Note {
 | `roles` | `String[]` | `{}` | Roles required for all operations |
 | `readRoles` | `String[]` | `{}` | Roles for GET requests (overrides `roles`) |
 | `writeRoles` | `String[]` | `{}` | Roles for POST/PUT/DELETE (overrides `roles`) |
-| `ignoredFields` | `String[]` | `{}` | Fields excluded from **both** the response DTO and the request DTO |
 | `pageable` | `boolean` | `false` | When `true`, `findAll` accepts `Pageable` and returns `Page<Dto>` |
 | `customMapper` | `Class<?>` | `void.class` | Optional custom Spring bean to use instead of the MapStruct-generated mapper |
 
@@ -129,24 +131,251 @@ In the **request** DTO, relations are **always** represented as `Long <field>Id`
 
 ---
 
-## `ignoredFields` — Hiding fields from the API
+## `@ExposeField(hidden = true)` — Hiding fields from the API
 
-Fields listed in `ignoredFields` are **excluded from both the response DTO and the request DTO**. The entity retains them for persistence — they are never exposed in API responses and cannot be set via the API.
+Fields marked `@ExposeField(hidden = true)` are **excluded from both the response DTO and the request DTO**. The entity retains them for persistence — they are never exposed in API responses and cannot be set via the API.
 
 ```java
-@ExposeEntity(
-    path = "users",
-    ignoredFields = {"passwordHash", "internalScore"}
-)
+@ExposeEntity(path = "users")
 public class User {
     @Id private Long id;
     private String email;
+
+    @ExposeField(hidden = true)
     private String passwordHash;   // stored in DB, never returned or accepted by the API
+
+    @ExposeField(hidden = true)
     private String internalScore;  // same
 }
 ```
 
-`UserDto` contains `id` + `email`. `UserRequestDto` contains `email` only (no `id`, no ignored fields).
+`UserDto` contains `id` + `email`. `UserRequestDto` contains `email` only (no `id`, no hidden fields).
+
+- Works on scalar fields, JPA relations (`@ManyToOne @ExposeField(hidden = true) Category category` drops `categoryId` / `category` from both DTOs) and MongoDB document fields.
+- Has no effect on the `@Id` field, which is always returned.
+- **A hidden field cannot have `filterOperations`** — that is a compile error, because a filter would let clients guess the value the API hides (`?passwordHash=…` returning rows or not).
+
+### Migrating from `ignoredFields`
+
+`ignoredFields` on `@ExposeEntity` / `@ExposeDocument` has been **removed**; mark each field instead. This is a breaking change — code still using `ignoredFields` no longer compiles.
+
+```java
+// before
+@ExposeEntity(path = "users", ignoredFields = {"passwordHash"})
+public class User { private String passwordHash; ... }
+
+// after
+@ExposeEntity(path = "users")
+public class User { @ExposeField(hidden = true) private String passwordHash; ... }
+```
+
+---
+
+## `@ExposeField` — Filtering `findAll`
+
+`@ExposeField` is a **field-level** annotation. Its `filterOperations` attribute lists the filter operations a field accepts as optional query parameters on the generated `GET /api/<path>` (findAll) endpoint. It works on both `@ExposeEntity` (JPA) and `@ExposeDocument` (MongoDB) classes.
+
+| Attribute | Type | Default | Description |
+|---|---|---|---|
+| `filterOperations` | `FilterOperation[]` | `{}` | Operations exposed as query parameters. Empty means the field is not filterable. |
+| `hidden` | `boolean` | `false` | Leave the field out of both DTOs — see [Hiding fields](#exposefieldhidden--true--hiding-fields-from-the-api). Cannot be combined with `filterOperations`. |
+
+### Declaring filters
+
+```java
+import static io.github.notablogger.springxpose.annotation.FilterOperation.*;
+
+@Entity
+@ExposeEntity(path = "products", pageable = true)
+public class Product {
+    @Id @GeneratedValue private Long id;
+
+    @ExposeField(filterOperations = {EQ, NE, LIKE})
+    private String name;            // ?name=  ?name_ne=  ?name_like=
+
+    @ExposeField(filterOperations = {GT, GTE, LT, LTE})
+    private BigDecimal price;       // ?price_gt=  ?price_gte=  ?price_lt=  ?price_lte=
+
+    @ExposeField(filterOperations = {IN, NOT_IN})
+    private Status status;          // ?status_in=ACTIVE,PENDING  ?status_not_in=DELETED
+
+    @ExposeField(filterOperations = IS_NULL)
+    private Instant deletedAt;      // ?deletedAt_is_null=true
+
+    private String description;     // no @ExposeField → not filterable
+}
+```
+
+```
+GET /api/products?price_gt=10&price_lt=100&name_like=widget&status_in=ACTIVE&page=0&size=20&sort=price,desc
+```
+
+- **Parameter names:** `EQ` uses the field name; every other operation uses `<field>_<operation>` in lower case (`price_gt`, `status_not_in`, `deletedAt_is_null`).
+- **All filters are optional.** A parameter that is not sent adds no condition; no parameters returns everything, exactly as before.
+- **Filters are AND-ed.** There is no OR.
+- **Works with paging and sorting** (`pageable = true`): filters, `page`, `size` and `sort` combine.
+
+### Operations
+
+| `FilterOperation` | Query param | Matches | JPA | MongoDB | Allowed field types |
+|---|---|---|---|---|---|
+| `EQ` | `price` | equal | `=` | `is` | any scalar |
+| `NE` | `price_ne` | not equal, **null included** | `<> OR IS NULL` | `ne` | any scalar |
+| `GT` | `price_gt` | greater than | `>` | `gt` | primitive or `Comparable` |
+| `GTE` | `price_gte` | greater than or equal | `>=` | `gte` | primitive or `Comparable` |
+| `LT` | `price_lt` | less than | `<` | `lt` | primitive or `Comparable` |
+| `LTE` | `price_lte` | less than or equal | `<=` | `lte` | primitive or `Comparable` |
+| `LIKE` | `name_like` | contains, case-insensitive | `lower(name) LIKE '%value%'` | regex, `i` option | `String` |
+| `IN` | `status_in` | equal to any of the values | `IN (…)` | `in` | any scalar |
+| `NOT_IN` | `status_not_in` | equal to none of the values, **null included** | `NOT IN (…) OR IS NULL` | `nin` | any scalar |
+| `IS_NULL` | `deletedAt_is_null` | `true`: null, `false`: set | `IS NULL` / `IS NOT NULL` | `is(null)` / `ne(null)` | any non-primitive |
+
+"Comparable" covers numbers, `String`, enums and `java.time` types. On collection fields only `IN`, `NOT_IN` and `IS_NULL` are allowed and mean something different — see [Collection fields](#collection-fields).
+
+### Parameter values
+
+| Field / operation | Format | Example |
+|---|---|---|
+| Numbers | plain number | `?price_gt=9.99` |
+| `String` | as is; `EQ`, `NE`, `IN`, `NOT_IN` are **case-sensitive** | `?name=Widget` |
+| Enums | constant name | `?status=ACTIVE` |
+| `LocalDate` | ISO-8601 date | `?launched_gte=2026-01-15` |
+| `Instant` | ISO-8601 instant | `?createdAt_gt=2026-01-15T00:00:00Z` |
+| `IN` / `NOT_IN` | comma-separated, or the parameter repeated | `?status_in=A,B` = `?status_in=A&status_in=B` |
+| `IS_NULL` | `true` / `false` | `?deletedAt_is_null=false` |
+| `LIKE` | any text; `%`, `_` and regex characters are matched literally | `?name_like=50%` does not match `500` |
+
+- **A value that cannot be converted** (`?price_gt=abc`, `?deletedAt_is_null=maybe`, `?launched=15.01.2026`) is rejected with `400 Bad Request` before any query runs.
+- **An empty `IN` / `NOT_IN`** (`?status_in=`) adds no condition.
+- **Unknown parameters are ignored**, including typos and the Java property name (`?priceGt=10` is not `?price_gt=10`).
+
+### Collection fields
+
+On a collection field — a JPA `@ElementCollection` or a MongoDB array — `IN`, `NOT_IN` and `IS_NULL` work on the elements:
+
+```java
+@ElementCollection
+@ExposeField(filterOperations = {IN, NOT_IN, IS_NULL})
+private List<String> tags;    // ?tags_in=sale,new  ?tags_not_in=clearance  ?tags_is_null=true
+```
+
+| Operation | Meaning | JPA | MongoDB |
+|---|---|---|---|
+| `IN` | has **any** of the values | `EXISTS` subquery on the collection | `in` |
+| `NOT_IN` | has **none** of the values (empty collections match) | `NOT EXISTS` | `nin` |
+| `IS_NULL` | `true`: null or empty, `false`: has elements | `isEmpty` / `isNotEmpty` | `tags.0` does not exist / exists |
+
+- A single value is `?tags_in=sale`. The parameter binds to a `List` of the element type (`List<Integer>` for `Set<Integer>`).
+- JPA uses a subquery rather than a join, so a row matching several values is returned once and paging totals stay correct.
+- **JPA collections must be `@ElementCollection`.** Without it the list is stored in a single column — Hibernate 6 maps an unannotated `List<String>` to a native array column, and converters or JSON mappings store text — and standard JPA queries cannot look inside that column.
+- **Arrays** (`String[]`) support only `IS_NULL`; declare the field as a `List` to filter its elements.
+
+### Relation filters
+
+`@ExposeField` on a JPA relation filters by the **related entity's id**:
+
+```java
+@ManyToOne
+@ExposeField(filterOperations = {EQ, NE, IN, NOT_IN, IS_NULL})
+private Category category;          // ?categoryId=5  ?categoryId_in=5,7  ?categoryId_is_null=true
+
+@ManyToMany
+@ExposeField(filterOperations = {IN, NOT_IN, IS_NULL})
+private Set<Supplier> suppliers;    // ?suppliers_in=1,2  ?suppliers_not_in=3  ?suppliers_is_null=true
+```
+
+| Relation | Param names | Operations | Meaning | JPA |
+|---|---|---|---|---|
+| `@ManyToOne`, owning `@OneToOne` | `categoryId`, `categoryId_ne`, `categoryId_in`, `categoryId_not_in`, `categoryId_is_null` | `EQ`, `NE`, `IN`, `NOT_IN`, `IS_NULL` | compare the related id; `NE` / `NOT_IN` include rows with no related entity | `root.get("category").get("id")` — the foreign-key column, no join |
+| `@OneToMany`, `@ManyToMany` | `suppliers_in`, `suppliers_not_in`, `suppliers_is_null` | `IN`, `NOT_IN`, `IS_NULL` | has **any** / **none** of the ids (none includes empty); `IS_NULL`: no related entities | `EXISTS` subquery, like collection fields — no duplicate rows, correct paging totals |
+
+- **To-one parameters are named `<field>Id`** — the same name as the id in the request DTO and in `ALWAYS_IDS` / list responses. To-many parameters keep the field name, like collection fields.
+- **The id type comes from the related entity's `@Id`** (`Long`, `UUID`, …), including an `@Id` inherited from a `@MappedSuperclass`. A value of the wrong type returns `400`.
+- **Not supported:** ranges and `LIKE` (ids are not ordered or text), `EQ` / `NE` on to-many relations, the inverse side of a `@OneToOne` (`mappedBy` — it has no foreign key; filter on the owning side), related entities with a composite id, and filtering by a related entity's *attributes* (`?category_name=Books` — see the [workaround](#workaround-filtering-by-a-related-entitys-attributes)).
+- MongoDB documents have no relations in spring-xpose.
+
+### Compile-time validation
+
+Mistakes fail the build with an error on the offending field instead of producing an endpoint that breaks at runtime:
+
+| Declaration | Error |
+|---|---|
+| `GT` / `GTE` / `LT` / `LTE` on a non-comparable type (`Map`, a custom class) | `GT is not supported on 'x' … requires a primitive or Comparable type` |
+| `LIKE` on a non-`String` field | `… LIKE requires a String field` |
+| `IS_NULL` on a primitive (`int`, `boolean`, …) | `… IS_NULL cannot apply to a primitive field, which is never null` |
+| `EQ`, `NE`, ranges or `LIKE` on a collection | `… EQ does not apply to a collection — use IN (has any of) or NOT_IN (has none of)` |
+| Filter on a JPA collection without `@ElementCollection` | `collection field 'tags' must be an @ElementCollection to be filtered — …` |
+| Filter on a raw collection (`List` without a type argument) or `List<?>` | `collection field 'tags' needs a concrete element type, e.g. List<String>` |
+| Anything but `IS_NULL` on an array | `… does not apply to an array — declare the field as a List to use IN / NOT_IN` |
+| Range or `LIKE` on a relation; `EQ` / `NE` on a to-many relation | `GT is not supported on relation 'category' — relation filters compare ids: use EQ, NE, IN, NOT_IN or IS_NULL` |
+| Filter on the inverse side of a `@OneToOne` (`mappedBy`) | `relation field 'passport' is the inverse side of a @OneToOne (mappedBy) — it has no foreign key to filter on; filter on the owning side instead` |
+| Related entity without a single `@Id` field (e.g. `@EmbeddedId`) | `relation field 'category' cannot be filtered — no single @Id field found on … (composite ids are not supported)` |
+| `hidden = true` together with `filterOperations` | `hidden field 'secret' cannot have filterOperations — a filter would let clients guess the value the API hides` |
+| Two filters mapping to the same parameter or property, e.g. `price` + `GT` next to a field `priceGt` + `EQ` | `filter 'priceGt EQ' on Product clashes with 'price GT' — …` |
+
+`@ExposeField` without `filterOperations` (or with an empty array) is not filterable; with `hidden = false` as well it has no effect.
+
+### Limitations
+
+- **Relations filter by id only.** Filtering by a related entity's attributes (`?category_name=Books`) is not supported — see the workaround below.
+- **AND only.** Filters cannot be combined with OR or grouped.
+- **`LIKE` is "contains" only** — no prefix/suffix match and no user-supplied wildcards. Because it lower-cases the column (JPA) or uses an unanchored case-insensitive regex (MongoDB), it cannot use a normal index; on large tables add a functional/text index or prefer `EQ`.
+- **`EQ` / `IN` on text is case-sensitive.**
+- **Collections:** only `IN`, `NOT_IN` and `IS_NULL`; no "has all of". JPA needs `@ElementCollection`.
+- **Very long `IN` lists** are passed to the database as-is; some databases limit the number of bind parameters per statement.
+- **Filters apply to `findAll` only** — not to `findById`, update or delete. If `FIND_ALL` is not in `expose`, the filter classes are still generated but unused.
+- **Unknown or misspelled parameters are silently ignored** rather than rejected.
+- **MongoDB field names** in queries are the Java property names; Spring Data maps them to `@Field` names as usual.
+
+> ⚠️ **Filters reveal values.** Any filterable field lets clients test values, even if they never read the field. Hidden fields therefore cannot be filtered (compile error); for other fields, only add filters where clients may learn the values.
+
+### Workaround: filtering by a related entity's attributes
+
+Leave `FIND_ALL` out of `expose` and write that one endpoint yourself at the same path; the generated security configuration for `/api/<path>/**` still applies:
+
+```java
+@ExposeEntity(path = "products",
+              expose = {Operation.FIND_BY_ID, Operation.CREATE, Operation.UPDATE, Operation.DELETE})
+public class Product { ... @ManyToOne private Category category; ... }
+
+public interface ProductQueries extends JpaRepository<Product, Long> {
+    List<Product> findByCategoryName(String categoryName);   // derived query: joins category
+}
+
+@RestController
+@RequestMapping("/api/products")
+class ProductListController {
+    private final ProductQueries products;
+    private final ProductMapper mapper;     // generated mapper
+
+    ProductListController(ProductQueries products, ProductMapper mapper) {
+        this.products = products; this.mapper = mapper;
+    }
+
+    @GetMapping
+    List<ProductDto> findAll(@RequestParam(required = false) String categoryName) {
+        SerializationContext.set(SerializationContext.Mode.LIST);   // same JSON shape as generated endpoints
+        try {
+            return mapper.toDtoList(categoryName == null ? products.findAll()
+                                                         : products.findByCategoryName(categoryName));
+        } finally {
+            SerializationContext.clear();
+        }
+    }
+}
+```
+
+If the entity also has `@ExposeField` filters, reuse the generated classes and add your condition:
+`ProductSpec.withFilters(filters).and((root, q, cb) -> cb.equal(root.get("category").get("name"), categoryName))`.
+
+### Generated code and OpenAPI
+
+- `<Entity>FilterParams` — one property per (field, operation), bound with `@ModelAttribute`. Suffixed parameters carry `@BindParam("price_gt")` (binding) and `@Parameter(name = "price_gt")` (OpenAPI). Primitives are boxed, `IN` / `NOT_IN` are `List`s, `IS_NULL` is `Boolean`.
+- `<Entity>Spec` — `withFilters(FilterParams)` returning a JPA `Specification` or a MongoDB `Query`.
+- JPA repositories also extend `JpaSpecificationExecutor<Entity>`; MongoDB controllers get a `MongoTemplate`.
+- **OpenAPI:** when springdoc is on the classpath the controller parameter gets `@ParameterObject`, so Swagger UI lists every filter (`price_gt`, `status_in` as an array, `deletedAt_is_null` as a boolean, …) with its type and a description. Without springdoc the filters still work; they are just not documented.
+
+Details and generated source examples: [`generated-artifacts.md`](generated-artifacts.md#7-entityfilterparams).
 
 ---
 
@@ -157,7 +386,7 @@ For entities with `CREATE` or `UPDATE` operations, spring-xpose generates a **`<
 | | `<Entity>Dto` (response) | `<Entity>RequestDto` (request body) |
 |---|---|---|
 | `id` field | ✅ included | ❌ excluded — ID comes from the path variable |
-| `ignoredFields` | ❌ excluded | ❌ excluded |
+| Hidden fields (`@ExposeField(hidden = true)`) | ❌ excluded | ❌ excluded |
 | `@NotBlank`, `@Positive`, etc. | not copied | ✅ copied from entity fields |
 | `@ManyToOne` / `@OneToOne` | depends on `relationMode` | always `Long <field>Id` |
 | `@OneToMany` / `@ManyToMany` | ❌ always excluded | ❌ always excluded |

@@ -1,6 +1,6 @@
 # Generated Artifacts — spring-xpose
 
-For every class annotated with `@ExposeEntity` or `@ExposeDocument`, spring-xpose writes **six `.java` files** into:
+For every class annotated with `@ExposeEntity` or `@ExposeDocument`, spring-xpose writes **six `.java` files** — eight when the class has `@ExposeField` filters — into:
 
 ```
 build/generated/sources/annotationProcessor/java/main/
@@ -11,6 +11,13 @@ build/generated/sources/annotationProcessor/java/main/
     ├── <Entity>Mapper.java
     ├── <Entity>Controller.java
     └── <Entity>SecurityConfigurer.java
+```
+
+Two more files are written only when at least one field has `@ExposeField(filterOperations = ...)`:
+
+```
+    ├── <Entity>FilterParams.java         (query filter parameters for findAll)
+    └── <Entity>Spec.java                 (JPA Specification / MongoDB Query builder)
 ```
 
 These are real, readable source files — open them in your IDE, set breakpoints, and read them like any other class. They are **not** to be edited by hand; they are regenerated on every build.
@@ -50,8 +57,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 | Source field | Included? | Shape in Dto |
 |---|---|---|
 | `@Id` field | ✅ always | same type |
-| Scalar field | ✅ unless in `ignoredFields` | boxed type (e.g. `long` → `Long`) |
-| `ignoredFields` | ❌ never | — |
+| Scalar field | ✅ unless hidden | boxed type (e.g. `long` → `Long`) |
+| `@ExposeField(hidden = true)` | ❌ never | — |
 | `@ManyToOne` / `@OneToOne` — `ALWAYS_OBJECT` mode | ✅ | full related entity type |
 | `@ManyToOne` / `@OneToOne` — `ALWAYS_IDS` or `IDS_FOR_LIST_OBJECT_FOR_SINGLE` mode | ✅ | `Long <fieldName>Id` |
 | `@OneToMany` / `@ManyToMany` | ❌ always excluded | — prevents circular serialisation |
@@ -61,11 +68,11 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 Entity:
 ```java
 @Entity
-@ExposeEntity(ignoredFields = {"passwordHash"})
+@ExposeEntity
 public class User {
     @Id private Long id;
     private String email;
-    private String passwordHash;
+    @ExposeField(hidden = true) private String passwordHash;
     @ManyToOne private Role role;
 }
 ```
@@ -95,8 +102,8 @@ public class UserDto {
 |---|---|---|
 | `@Id` field | ❌ never | ID comes from the URL path variable |
 | `@Version` field | ❌ never | Managed by JPA |
-| Scalar field | ✅ unless in `ignoredFields` | Jakarta Validation annotations copied |
-| `ignoredFields` | ❌ never | Can't be set via the API |
+| Scalar field | ✅ unless hidden | Jakarta Validation annotations copied |
+| `@ExposeField(hidden = true)` | ❌ never | Can't be set via the API |
 | `@ManyToOne` / `@OneToOne` | ��� | always as `Long <fieldName>Id` |
 | `@OneToMany` / `@ManyToMany` | ❌ always excluded | — |
 
@@ -107,7 +114,7 @@ Continuing from the `User` entity above:
 public class UserRequestDto {
     @NotBlank
     private String email;
-    // passwordHash omitted (ignoredFields)
+    // passwordHash omitted (hidden)
     // id omitted
     private Long roleId;  // always Long, regardless of relationMode
 
@@ -146,7 +153,7 @@ The following targets are always ignored in both methods — they must not be ov
 
 - `@Id` field — managed by JPA (`AUTO`/`IDENTITY`/`SEQUENCE`)
 - `@Version` field (if present) — managed by JPA optimistic locking
-- All `ignoredFields` — not present in `RequestDto`; ignore explicitly to suppress MapStruct warnings
+- All hidden fields — not present in `RequestDto`; ignore explicitly to suppress MapStruct warnings
 - Relation object fields — resolved by the controller via `EntityManager.getReference()`
 
 ### Custom mapper
@@ -169,7 +176,7 @@ When `@ExposeEntity(customMapper = MyMapper.class)` is set:
 
 | `Operation` | HTTP method | Path | Request body | Response |
 |---|---|---|---|---|
-| `FIND_ALL` | `GET` | `/api/{path}` | — | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` |
+| `FIND_ALL` | `GET` | `/api/{path}` | — (optional filter query params with `@ExposeField`) | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` |
 | `FIND_BY_ID` | `GET` | `/api/{path}/{id}` | — | `200 Dto` / `404` |
 | `CREATE` | `POST` | `/api/{path}` | `@Valid RequestDto` | `201 Dto` / `400` |
 | `UPDATE` | `PUT` | `/api/{path}/{id}` | `@Valid RequestDto` | `200 Dto` / `400` / `404` |
@@ -182,6 +189,7 @@ When `@ExposeEntity(customMapper = MyMapper.class)` is set:
 | `repository` | `<Entity>Repository` | always |
 | `mapper` | `<Entity>Mapper` | always |
 | `entityManager` | `jakarta.persistence.EntityManager` | only when `CREATE` or `UPDATE` is enabled and the entity has non-ignored single relations |
+| `mongoTemplate` | `MongoTemplate` | only for `@ExposeDocument` with `@ExposeField` filters — runs the filter `Query` |
 
 ### `SerializationContext` usage
 
@@ -236,7 +244,88 @@ CSRF is disabled — REST APIs are stateless and do not use cookie-based session
 
 ---
 
+## 7. `<Entity>FilterParams`
+
+**Type:** `final` class, bound from query parameters via `@ModelAttribute` (plus `@ParameterObject` when springdoc is present)  
+**Generated when:** at least one field has `@ExposeField(filterOperations = ...)`
+
+One property per (field, operation): `EQ` uses the field name (`price`), every other operation `<field><Operation>` (`priceGt`, `statusNotIn`, `deletedAtIsNull`), bound from the query parameter `<field>_<operation>` (`price_gt`, `status_not_in`, `deletedAt_is_null`). Primitive field types are boxed, so an absent parameter is `null` and adds no condition. `IN` / `NOT_IN` properties are a `List` of the field type — of the element type for collection fields — and an empty list also adds no condition; `IS_NULL` properties are `Boolean`. Suffixed parameters carry two annotations — `@BindParam` so Spring MVC binds `?price_gt=`, and `@Parameter(name = ...)` so springdoc documents `price_gt` rather than the Java name:
+
+```java
+public final class ProductFilterParams {
+  @Parameter(name = "price", description = "price equals")
+  private final BigDecimal price;
+
+  @Parameter(name = "price_gt", description = "price greater than")
+  private final BigDecimal priceGt;
+
+  public ProductFilterParams(BigDecimal price, @BindParam("price_gt") BigDecimal priceGt) { ... }
+
+  public BigDecimal getPrice() { return price; }
+  public BigDecimal getPriceGt() { return priceGt; }
+}
+```
+
+---
+
+## 8. `<Entity>Spec`
+
+**Type:** class with a static `withFilters(<Entity>FilterParams)` method  
+**Generated when:** same as `<Entity>FilterParams`
+
+Each non-null filter property adds one condition; conditions are AND-ed.
+
+| Operation | JPA (`CriteriaBuilder`) | MongoDB (`Criteria`) |
+|---|---|---|
+| `EQ` | `cb.equal(path, v)` | `where(f).is(v)` |
+| `NE` | `cb.or(cb.notEqual(path, v), cb.isNull(path))` | `where(f).ne(v)` |
+| `GT` / `GTE` / `LT` / `LTE` | `cb.greaterThan(…)` / `greaterThanOrEqualTo` / `lessThan` / `lessThanOrEqualTo` | `gt` / `gte` / `lt` / `lte` |
+| `LIKE` | `cb.like(cb.lower(path), likePattern(v), '\\')` | `where(f).regex(Pattern.quote(v), "i")` |
+| `IN` | `path.in(list)` | `where(f).in(list)` |
+| `NOT_IN` | `cb.or(cb.not(path.in(list)), cb.isNull(path))` | `where(f).nin(list)` |
+| `IS_NULL` | `cb.isNull(path)` / `cb.isNotNull(path)` | `where(f).is(null)` / `ne(null)` |
+| `IN` on a collection | `<field>HasAny(...)` (EXISTS subquery) | `where(f).in(list)` |
+| `NOT_IN` on a collection | `cb.not(<field>HasAny(...))` | `where(f).nin(list)` |
+| `IS_NULL` on a collection | `cb.isEmpty(path)` / `cb.isNotEmpty(path)` | `where(f + ".0").exists(!v)` |
+| To-one relation (`categoryId…`) | as above on `root.get("category").get("id")` (FK column, no join); null checks on `root.get("category")` | — |
+| To-many relation (`suppliers_in…`) | as collections; `<field>HasAny` compares `correlated.join("suppliers").get("id")` | — |
+
+- **JPA** — returns `Specification<Entity>`, executed with `repository.findAll(spec)` / `findAll(spec, pageable)`. A `likePattern` helper is added when `LIKE` is used; it lower-cases the value and escapes `%`, `_` and `\`.
+- **Collection fields** (JPA `@ElementCollection`) — `IN` / `NOT_IN` call a generated `<field>HasAny(root, query, cb, values)` helper: an `EXISTS` subquery that correlates the outer root and joins the collection, so matching rows are not duplicated.
+- **MongoDB** — returns a `Query` built from `Criteria`, executed with `mongoTemplate.find(...)` (and `count(...)` for pageable). `LIKE` uses `Pattern.quote(value)` with the `i` option.
+
+```java
+public static Specification<Product> withFilters(ProductFilterParams f) {
+  return (root, query, cb) -> {
+    List<Predicate> predicates = new ArrayList<>();
+    if (f.getPrice() != null)
+      predicates.add(cb.equal(root.get("price"), f.getPrice()));
+    if (f.getPriceGt() != null)
+      predicates.add(cb.greaterThan(root.<BigDecimal>get("price"), f.getPriceGt()));
+    return cb.and(predicates.toArray(new Predicate[0]));
+  };
+}
+```
+
+---
+
 ## Error responses from generated controllers
+
+A filter value that cannot be converted (`?price_gt=abc`, `?deletedAt_is_null=maybe`, a non-ISO date) is rejected while binding `<Entity>FilterParams`, before any query runs. The response is the `400` validation error below, with the `errors` map keyed by the **query parameter name** the client sent:
+
+```json
+{
+  "type": "urn:springxpose:validation-error",
+  "title": "Validation failed",
+  "status": 400,
+  "detail": "One or more fields failed validation.",
+  "errors": {
+    "price_gt": "Failed to convert value of type 'java.lang.String' to required type 'java.math.BigDecimal'; ...",
+    "deletedAt_is_null": "Failed to convert value of type 'java.lang.String' to required type 'java.lang.Boolean'; Invalid boolean value [maybe]"
+  }
+}
+```
+
 
 All generated controllers benefit from `SpringXposeExceptionHandler` (auto-configured by the starter). Responses follow **RFC 9457 Problem Detail** format:
 

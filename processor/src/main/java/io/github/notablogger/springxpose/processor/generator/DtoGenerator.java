@@ -15,7 +15,7 @@ import java.io.IOException;
  *
  * <p>Rules:
  * <ul>
- *   <li>All scalar fields except those listed in {@code ignoredFields} are included.</li>
+ *   <li>All scalar fields except those listed in {@code @ExposeField(hidden = true)} are included.</li>
  *   <li>OneToMany / ManyToMany (collection) relations are always excluded — eliminates circular refs.</li>
  *   <li>ManyToOne / OneToOne (single) relations:
  *     <ul>
@@ -40,10 +40,11 @@ public class DtoGenerator {
             .addJavadoc("Generated DTO for {@link $L} — do not edit.\n", model.entitySimpleName());
 
         // Scalar fields (excludes @Id field from ignored check since id is always needed,
-        // but respects ignoredFields for everything else)
+        // but respects hidden fields for everything else)
         for (FieldModel field : model.fields()) {
-            if (!field.isId() && model.ignoredFields().contains(field.name())) continue;
-            TypeName typeName = resolveTypeName(field.typeName());
+            if (!field.isId() && model.hiddenFields().contains(field.name())) continue;
+            // From the TypeMirror, not the type's text: keeps generics (List<String>) and arrays
+            TypeName typeName = TypeName.get(field.type()).box();
             dto.addField(typeName, field.name(), Modifier.PRIVATE);
             dto.addMethod(getter(field.name(), typeName));
             dto.addMethod(setter(field.name(), typeName));
@@ -52,7 +53,7 @@ public class DtoGenerator {
         // Relation fields — only SINGLE (ManyToOne / OneToOne)
         // COLLECTION (OneToMany / ManyToMany) are always skipped
         for (RelationFieldModel rel : model.relations()) {
-            if (model.ignoredFields().contains(rel.name())) continue;
+            if (model.hiddenFields().contains(rel.name())) continue;
             if ("COLLECTION".equals(rel.relationType())) continue; // always skip collections
 
             if (model.relationMode() == RelationMode.ALWAYS_OBJECT) {
@@ -80,20 +81,6 @@ public class DtoGenerator {
         }
     }
 
-    private static TypeName resolveTypeName(String rawTypeName) {
-        // Strip inline annotation tokens e.g. "java.lang.@jakarta.validation.constraints.NotBlank String"
-        // → "java.lang.String"
-        String typeName = rawTypeName.replaceAll("@\\S+\\s*", "").trim();
-
-        return switch (typeName) {
-            case "long", "java.lang.Long"       -> TypeName.LONG.box();
-            case "int", "java.lang.Integer"      -> TypeName.INT.box();
-            case "double", "java.lang.Double"    -> TypeName.DOUBLE.box();
-            case "boolean", "java.lang.Boolean"  -> TypeName.BOOLEAN.box();
-            case "float", "java.lang.Float"      -> TypeName.FLOAT.box();
-            default -> ClassName.bestGuess(typeName);
-        };
-    }
 
     private static MethodSpec getter(String name, TypeName type) {
         String prefix = type.equals(TypeName.BOOLEAN.box()) ? "is" : "get";
