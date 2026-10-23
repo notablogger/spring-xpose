@@ -232,6 +232,34 @@ class RestControllerGeneratorTest {
     }
 
     @Test
+    void pageableHasParameterObjectOnlyWhenSpringdocIsPresent() throws Exception {
+        javax.tools.JavaFileObject springdocParameterObject = JavaFileObjects.forSourceString(
+            "org.springdoc.core.annotations.ParameterObject",
+            """
+            package org.springdoc.core.annotations;
+            public @interface ParameterObject {}
+            """);
+
+        Compilation withSpringdoc = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", pageable=true)"), REPO, springdocParameterObject);
+        assertThat(withSpringdoc).succeeded();
+        org.junit.jupiter.api.Assertions.assertTrue(
+            withSpringdoc.generatedSourceFile("com.example.entity.generated.BookController")
+                .orElseThrow().getCharContent(false).toString()
+                .contains("@ParameterObject Pageable pageable"),
+            "with springdoc, Pageable must be a @ParameterObject so page/size/sort are documented");
+
+        Compilation withoutSpringdoc = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", pageable=true)"), REPO);
+        assertThat(withoutSpringdoc).succeeded();
+        org.junit.jupiter.api.Assertions.assertFalse(
+            withoutSpringdoc.generatedSourceFile("com.example.entity.generated.BookController")
+                .orElseThrow().getCharContent(false).toString()
+                .contains("ParameterObject"),
+            "without springdoc on the classpath no springdoc annotation may be generated");
+    }
+
+    @Test
     void pageableFalseGeneratesFlatList() throws Exception {
         Compilation c = javac().withProcessors(new ExposeEntityProcessor())
             .compile(bookWith("@ExposeEntity(path=\"books\", pageable=false)"), REPO);
