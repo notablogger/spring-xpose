@@ -118,11 +118,12 @@ public class FilterParamsGenerator {
 
     /** OpenAPI description for one filter parameter. */
     private static String describe(FilterFieldModel filter, FilterOperation op) {
-        String field = filter.name();
+        String field = filter.isRelation() && !filter.isCollection() ? filter.name() + " id" : filter.name();
         if (filter.isCollection()) {
+            String values = filter.isRelation() ? " the ids" : "";
             return switch (op) {
-                case IN      -> field + " has any of (comma-separated)";
-                case NOT_IN  -> field + " has none of (comma-separated)";
+                case IN      -> field + " has any of" + values + " (comma-separated)";
+                case NOT_IN  -> field + " has none of" + values + " (comma-separated)";
                 case IS_NULL -> "true: " + field + " is null or empty, false: " + field + " has elements";
                 default      -> throw new IllegalStateException(op + " on collection " + field);
             };

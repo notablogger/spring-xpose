@@ -270,6 +270,30 @@ private List<String> tags;    // ?tags_in=sale,new  ?tags_not_in=clearance  ?tag
 - **JPA collections must be `@ElementCollection`.** Without it the list is stored in a single column — Hibernate 6 maps an unannotated `List<String>` to a native array column, and converters or JSON mappings store text — and standard JPA queries cannot look inside that column.
 - **Arrays** (`String[]`) support only `IS_NULL`; declare the field as a `List` to filter its elements.
 
+### Relation filters
+
+`@ExposeField` on a JPA relation filters by the **related entity's id**:
+
+```java
+@ManyToOne
+@ExposeField(filterOperations = {EQ, NE, IN, NOT_IN, IS_NULL})
+private Category category;          // ?categoryId=5  ?categoryId_in=5,7  ?categoryId_is_null=true
+
+@ManyToMany
+@ExposeField(filterOperations = {IN, NOT_IN, IS_NULL})
+private Set<Supplier> suppliers;    // ?suppliers_in=1,2  ?suppliers_not_in=3  ?suppliers_is_null=true
+```
+
+| Relation | Param names | Operations | Meaning | JPA |
+|---|---|---|---|---|
+| `@ManyToOne`, owning `@OneToOne` | `categoryId`, `categoryId_ne`, `categoryId_in`, `categoryId_not_in`, `categoryId_is_null` | `EQ`, `NE`, `IN`, `NOT_IN`, `IS_NULL` | compare the related id; `NE` / `NOT_IN` include rows with no related entity | `root.get("category").get("id")` — the foreign-key column, no join |
+| `@OneToMany`, `@ManyToMany` | `suppliers_in`, `suppliers_not_in`, `suppliers_is_null` | `IN`, `NOT_IN`, `IS_NULL` | has **any** / **none** of the ids (none includes empty); `IS_NULL`: no related entities | `EXISTS` subquery, like collection fields — no duplicate rows, correct paging totals |
+
+- **To-one parameters are named `<field>Id`** — the same name as the id in the request DTO and in `ALWAYS_IDS` / list responses. To-many parameters keep the field name, like collection fields.
+- **The id type comes from the related entity's `@Id`** (`Long`, `UUID`, …), including an `@Id` inherited from a `@MappedSuperclass`. A value of the wrong type returns `400`.
+- **Not supported:** ranges and `LIKE` (ids are not ordered or text), `EQ` / `NE` on to-many relations, the inverse side of a `@OneToOne` (`mappedBy` — it has no foreign key; filter on the owning side), related entities with a composite id, and filtering by a related entity's *attributes* (`?category_name=Books` — see the [workaround](#workaround-filtering-by-a-related-entitys-attributes)).
+- MongoDB documents have no relations in spring-xpose.
+
 ### Compile-time validation
 
 Mistakes fail the build with an error on the offending field instead of producing an endpoint that breaks at runtime:
@@ -283,7 +307,9 @@ Mistakes fail the build with an error on the offending field instead of producin
 | Filter on a JPA collection without `@ElementCollection` | `collection field 'tags' must be an @ElementCollection to be filtered — …` |
 | Filter on a raw collection (`List` without a type argument) or `List<?>` | `collection field 'tags' needs a concrete element type, e.g. List<String>` |
 | Anything but `IS_NULL` on an array | `… does not apply to an array — declare the field as a List to use IN / NOT_IN` |
-| `@ExposeField` on a JPA relation (`@ManyToOne`, `@OneToOne`, `@OneToMany`, `@ManyToMany`) | `relation field 'category' cannot be filtered — only scalar fields support filter operations` |
+| Range or `LIKE` on a relation; `EQ` / `NE` on a to-many relation | `GT is not supported on relation 'category' — relation filters compare ids: use EQ, NE, IN, NOT_IN or IS_NULL` |
+| Filter on the inverse side of a `@OneToOne` (`mappedBy`) | `relation field 'passport' is the inverse side of a @OneToOne (mappedBy) — it has no foreign key to filter on; filter on the owning side instead` |
+| Related entity without a single `@Id` field (e.g. `@EmbeddedId`) | `relation field 'category' cannot be filtered — no single @Id field found on … (composite ids are not supported)` |
 | `hidden = true` together with `filterOperations` | `hidden field 'secret' cannot have filterOperations — a filter would let clients guess the value the API hides` |
 | Two filters mapping to the same parameter or property, e.g. `price` + `GT` next to a field `priceGt` + `EQ` | `filter 'priceGt EQ' on Product clashes with 'price GT' — …` |
 
@@ -291,7 +317,7 @@ Mistakes fail the build with an error on the offending field instead of producin
 
 ### Limitations
 
-- **No relation filters.** Filtering by a related entity (`?category=5`) or its attributes (`?category_name=Books`) is not supported yet — see the workaround below.
+- **Relations filter by id only.** Filtering by a related entity's attributes (`?category_name=Books`) is not supported — see the workaround below.
 - **AND only.** Filters cannot be combined with OR or grouped.
 - **`LIKE` is "contains" only** — no prefix/suffix match and no user-supplied wildcards. Because it lower-cases the column (JPA) or uses an unanchored case-insensitive regex (MongoDB), it cannot use a normal index; on large tables add a functional/text index or prefer `EQ`.
 - **`EQ` / `IN` on text is case-sensitive.**
@@ -303,7 +329,7 @@ Mistakes fail the build with an error on the offending field instead of producin
 
 > ⚠️ **Filters reveal values.** Any filterable field lets clients test values, even if they never read the field. Hidden fields therefore cannot be filtered (compile error); for other fields, only add filters where clients may learn the values.
 
-### Workaround: filtering on a relation today
+### Workaround: filtering by a related entity's attributes
 
 Leave `FIND_ALL` out of `expose` and write that one endpoint yourself at the same path; the generated security configuration for `/api/<path>/**` still applies:
 
@@ -313,7 +339,7 @@ Leave `FIND_ALL` out of `expose` and write that one endpoint yourself at the sam
 public class Product { ... @ManyToOne private Category category; ... }
 
 public interface ProductQueries extends JpaRepository<Product, Long> {
-    List<Product> findByCategoryId(Long categoryId);
+    List<Product> findByCategoryName(String categoryName);   // derived query: joins category
 }
 
 @RestController
@@ -327,11 +353,11 @@ class ProductListController {
     }
 
     @GetMapping
-    List<ProductDto> findAll(@RequestParam(required = false) Long categoryId) {
+    List<ProductDto> findAll(@RequestParam(required = false) String categoryName) {
         SerializationContext.set(SerializationContext.Mode.LIST);   // same JSON shape as generated endpoints
         try {
-            return mapper.toDtoList(categoryId == null ? products.findAll()
-                                                       : products.findByCategoryId(categoryId));
+            return mapper.toDtoList(categoryName == null ? products.findAll()
+                                                         : products.findByCategoryName(categoryName));
         } finally {
             SerializationContext.clear();
         }
@@ -340,7 +366,7 @@ class ProductListController {
 ```
 
 If the entity also has `@ExposeField` filters, reuse the generated classes and add your condition:
-`ProductSpec.withFilters(filters).and((root, q, cb) -> cb.equal(root.get("category").get("id"), categoryId))`.
+`ProductSpec.withFilters(filters).and((root, q, cb) -> cb.equal(root.get("category").get("name"), categoryName))`.
 
 ### Generated code and OpenAPI
 

@@ -111,14 +111,14 @@ public record EntityModel(
             }
 
             if (isHidden(field)) hiddenFields.add(fieldName);
-            filtersValid &= collectFilter(field,
-                isManyToOne || isOneToMany || isManyToMany || isOneToOne, storeType, filters, env);
+            String relationType = isManyToOne || isOneToOne ? "SINGLE"
+                : isOneToMany || isManyToMany ? "COLLECTION" : null;
+            filtersValid &= collectFilter(field, relationType, storeType, filters, env);
 
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
             if (isVersion) { versionFieldName = fieldName; }
 
-            if (isManyToOne || isOneToMany || isManyToMany || isOneToOne) {
-                String relationType = isManyToOne || isOneToOne ? "SINGLE" : "COLLECTION";
+            if (relationType != null) {
                 String relatedEntityType = resolveRelatedEntityType(field, env);
                 relations.add(new RelationFieldModel(fieldName, fieldType, relationType, relatedEntityType));
             } else {
@@ -192,7 +192,7 @@ public record EntityModel(
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
 
             if (isHidden(field)) hiddenFields.add(fieldName);
-            filtersValid &= collectFilter(field, false, storeType, filters, env);
+            filtersValid &= collectFilter(field, null, storeType, filters, env);
 
             List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
                 .filter(am -> am.getAnnotationType().toString().startsWith("jakarta.validation"))
@@ -240,7 +240,7 @@ public record EntityModel(
      * fit the field (relation field, range operation on a non-comparable type, LIKE on a non-String,
      * a scalar operation on a collection, ...).
      */
-    private static boolean collectFilter(VariableElement field, boolean isRelation, StoreType storeType,
+    private static boolean collectFilter(VariableElement field, String relationType, StoreType storeType,
                                          List<FilterFieldModel> filters, ProcessingEnvironment env) {
         ExposeField exposeField = field.getAnnotation(ExposeField.class);
         if (exposeField == null || exposeField.filterOperations().length == 0) return true;
@@ -256,11 +256,8 @@ public record EntityModel(
         operations.addAll(Arrays.asList(exposeField.filterOperations()));
         String fieldName = field.getSimpleName().toString();
 
-        if (isRelation) {
-            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                "@ExposeField: relation field '" + fieldName + "' cannot be filtered — "
-                + "only scalar fields support filter operations", field);
-            return false;
+        if (relationType != null) {
+            return collectRelationFilter(field, fieldName, "SINGLE".equals(relationType), operations, filters, env);
         }
 
         TypeMirror type = field.asType();
@@ -313,8 +310,77 @@ public record EntityModel(
                 valid = false;
             }
         }
-        if (valid) filters.add(new FilterFieldModel(fieldName, type, elementType, operations));
+        if (valid) filters.add(new FilterFieldModel(fieldName, fieldName, type, elementType, null, operations));
         return valid;
+    }
+
+    /**
+     * Relation filters compare the related entity's id. To-one ({@code @ManyToOne}, owning {@code @OneToOne}):
+     * {@code ?categoryId=5} with EQ, NE, IN, NOT_IN, IS_NULL. To-many ({@code @OneToMany}, {@code @ManyToMany}):
+     * {@code ?tags_in=1,2} with IN (has any of), NOT_IN (has none of), IS_NULL (empty).
+     */
+    private static boolean collectRelationFilter(VariableElement field, String fieldName, boolean single,
+                                                 Set<FilterOperation> operations,
+                                                 List<FilterFieldModel> filters, ProcessingEnvironment env) {
+        jakarta.persistence.OneToOne oneToOne = field.getAnnotation(jakarta.persistence.OneToOne.class);
+        if (oneToOne != null && !oneToOne.mappedBy().isEmpty()) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "@ExposeField: relation field '" + fieldName + "' is the inverse side of a @OneToOne (mappedBy) — "
+                + "it has no foreign key to filter on; filter on the owning side instead", field);
+            return false;
+        }
+
+        TypeMirror relatedType = single ? field.asType() : collectionElementType(field.asType());
+        Element related = relatedType == null ? null : env.getTypeUtils().asElement(relatedType);
+        VariableElement relatedId = related instanceof TypeElement te ? findIdField(te, env) : null;
+        if (relatedId == null) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "@ExposeField: relation field '" + fieldName + "' cannot be filtered — no single @Id field found on "
+                + (relatedType == null ? "the related entity" : relatedType) + " (composite ids are not supported)",
+                field);
+            return false;
+        }
+
+        boolean valid = true;
+        for (FilterOperation op : operations) {
+            boolean fits = switch (op) {
+                case EQ, NE -> single;
+                case IN, NOT_IN, IS_NULL -> true;
+                default -> false;
+            };
+            if (!fits) {
+                env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    "@ExposeField: " + op + " is not supported on relation '" + fieldName + "' — relation filters "
+                    + "compare ids: use " + (single ? "EQ, NE, IN, NOT_IN or IS_NULL"
+                                                     : "IN (has any of), NOT_IN (has none of) or IS_NULL"),
+                    field);
+                valid = false;
+            }
+        }
+        if (!valid) return false;
+
+        String idName = relatedId.getSimpleName().toString();
+        TypeMirror idType = relatedId.asType();
+        filters.add(single
+            ? new FilterFieldModel(fieldName, fieldName + "Id", idType, null, idName, operations)
+            : new FilterFieldModel(fieldName, fieldName, field.asType(), idType, idName, operations));
+        return true;
+    }
+
+    /** The {@code @Id} field of an entity, searching superclasses ({@code @MappedSuperclass}); {@code null} if none. */
+    private static VariableElement findIdField(TypeElement type, ProcessingEnvironment env) {
+        for (TypeElement current = type; current != null; ) {
+            for (Element enclosed : current.getEnclosedElements()) {
+                if (enclosed.getKind() == ElementKind.FIELD
+                        && enclosed.getAnnotation(jakarta.persistence.Id.class) != null) {
+                    return (VariableElement) enclosed;
+                }
+            }
+            TypeMirror superclass = current.getSuperclass();
+            current = superclass.getKind() == TypeKind.DECLARED
+                ? (TypeElement) env.getTypeUtils().asElement(superclass) : null;
+        }
+        return null;
     }
 
     /** Element type of a {@code Collection<E>} field, or {@code null} for a raw or wildcard element type. */

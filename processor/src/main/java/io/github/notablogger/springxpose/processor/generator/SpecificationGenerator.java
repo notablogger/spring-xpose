@@ -124,25 +124,29 @@ public class SpecificationGenerator {
             String field = filter.name();
             if (filter.isCollection() && (filter.operations().contains(FilterOperation.IN)
                     || filter.operations().contains(FilterOperation.NOT_IN))) {
-                hasAnyHelpers.add(jpaHasAnyHelper(field, entityClass));
+                hasAnyHelpers.add(jpaHasAnyHelper(field, filter.relatedIdField(), entityClass));
             }
+            // A to-one relation compares the related id: root.get("category").get("id") reads the FK column
+            CodeBlock path = filter.isRelation() && !filter.isCollection()
+                ? CodeBlock.of("root.get($S).get($S)", field, filter.relatedIdField())
+                : CodeBlock.of("root.get($S)", field);
             for (FilterOperation op : filter.operations()) {
                 String getter = filter.getterName(op);
                 CodeBlock condition = filter.isCollection()
                     ? jpaCollectionCondition(op, field, type, getter)
                     : switch (op) {
-                    case EQ   -> CodeBlock.of("cb.equal(root.get($S), f.$L())", field, getter);
-                    case NE   -> CodeBlock.of("cb.or(cb.notEqual(root.get($S), f.$L()), cb.isNull(root.get($S)))",
-                                     field, getter, field);
+                    case EQ   -> CodeBlock.of("cb.equal($L, f.$L())", path, getter);
+                    case NE   -> CodeBlock.of("cb.or(cb.notEqual($L, f.$L()), cb.isNull(root.get($S)))",
+                                     path, getter, field);
                     case GT   -> CodeBlock.of("cb.greaterThan(root.<$T>get($S), f.$L())", type, field, getter);
                     case GTE  -> CodeBlock.of("cb.greaterThanOrEqualTo(root.<$T>get($S), f.$L())", type, field, getter);
                     case LT   -> CodeBlock.of("cb.lessThan(root.<$T>get($S), f.$L())", type, field, getter);
                     case LTE  -> CodeBlock.of("cb.lessThanOrEqualTo(root.<$T>get($S), f.$L())", type, field, getter);
                     case LIKE -> CodeBlock.of("cb.like(cb.lower(root.<$T>get($S)), likePattern(f.$L()), '\\\\')",
                                      String.class, field, getter);
-                    case IN   -> CodeBlock.of("root.get($S).in(f.$L())", field, getter);
-                    case NOT_IN -> CodeBlock.of("cb.or(cb.not(root.get($S).in(f.$L())), cb.isNull(root.get($S)))",
-                                     field, getter, field);
+                    case IN   -> CodeBlock.of("$L.in(f.$L())", path, getter);
+                    case NOT_IN -> CodeBlock.of("cb.or(cb.not($L.in(f.$L())), cb.isNull(root.get($S)))",
+                                     path, getter, field);
                     case IS_NULL -> CodeBlock.of("f.$L() ? cb.isNull(root.get($S)) : cb.isNotNull(root.get($S))",
                                      getter, field, field);
                     };
@@ -263,7 +267,7 @@ public class SpecificationGenerator {
      * {@code <field>HasAny}: EXISTS subquery joining the element collection. A subquery rather than a
      * join on the outer query, so a row matching several values is returned once and paging stays correct.
      */
-    private static MethodSpec jpaHasAnyHelper(String field, ClassName entityClass) {
+    private static MethodSpec jpaHasAnyHelper(String field, String relatedIdField, ClassName entityClass) {
         ClassName criteria = ClassName.get("jakarta.persistence.criteria", "CriteriaQuery");
         ClassName builder  = ClassName.get("jakarta.persistence.criteria", "CriteriaBuilder");
         ClassName rootCls  = ClassName.get("jakarta.persistence.criteria", "Root");
@@ -280,7 +284,9 @@ public class SpecificationGenerator {
                 WildcardTypeName.subtypeOf(Object.class)), "values")
             .addStatement("$T<$T> sub = query.subquery($T.class)", subquery, Integer.class, Integer.class)
             .addStatement("$T correlated = sub.correlate(root)", rootType)
-            .addStatement("sub.select(cb.literal(1)).where(correlated.join($S).in(values))", field)
+            .addStatement("sub.select(cb.literal(1)).where($L.in(values))", relatedIdField == null
+                ? CodeBlock.of("correlated.join($S)", field)
+                : CodeBlock.of("correlated.join($S).get($S)", field, relatedIdField))
             .addStatement("return cb.exists(sub)")
             .build();
     }

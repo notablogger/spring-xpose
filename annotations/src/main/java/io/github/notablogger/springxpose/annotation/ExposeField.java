@@ -26,7 +26,10 @@ import java.lang.annotation.*;
  *       {@code IS_NULL} (null or empty); on JPA they must be {@code @ElementCollection} and need a
  *       concrete element type ({@code List<String>}, not a raw {@code List}).</li>
  *   <li>Array fields support only {@code IS_NULL}.</li>
- *   <li>JPA relation fields ({@code @ManyToOne} etc.) cannot be filtered.</li>
+ *   <li>JPA relations filter by the related entity's id: to-one ({@code @ManyToOne}, owning
+ *       {@code @OneToOne}) supports {@code EQ}, {@code NE}, {@code IN}, {@code NOT_IN}, {@code IS_NULL}
+ *       as {@code ?categoryId=5}; to-many supports {@code IN}, {@code NOT_IN}, {@code IS_NULL} as
+ *       {@code ?suppliers_in=1,2}. The inverse side of a {@code @OneToOne} cannot be filtered.</li>
  *   <li>Two filters may not map to the same query parameter or property name.</li>
  *   <li>A {@code hidden} field cannot have {@code filterOperations}: a filter would let clients
  *       guess the value the API hides.</li>
