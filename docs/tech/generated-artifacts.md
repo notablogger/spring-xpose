@@ -1,6 +1,6 @@
 # Generated Artifacts — spring-xpose
 
-For every class annotated with `@ExposeEntity` or `@ExposeDocument`, spring-xpose writes **six `.java` files** into:
+For every class annotated with `@ExposeEntity` or `@ExposeDocument`, spring-xpose writes **six `.java` files** — eight when the class has `@ExposeField` filters — into:
 
 ```
 build/generated/sources/annotationProcessor/java/main/
@@ -13,7 +13,7 @@ build/generated/sources/annotationProcessor/java/main/
     └── <Entity>SecurityConfigurer.java
 ```
 
-Two more files are written only when at least one field has `@ExposeField(operations = ...)`:
+Two more files are written only when at least one field has `@ExposeField(filterOperations = ...)`:
 
 ```
     ├── <Entity>FilterParams.java         (query filter parameters for findAll)
@@ -247,9 +247,9 @@ CSRF is disabled — REST APIs are stateless and do not use cookie-based session
 ## 7. `<Entity>FilterParams`
 
 **Type:** `final` class, bound from query parameters via `@ModelAttribute` (plus `@ParameterObject` when springdoc is present)  
-**Generated when:** at least one field has `@ExposeField(operations = ...)`
+**Generated when:** at least one field has `@ExposeField(filterOperations = ...)`
 
-One property per (field, operation). Primitive field types are boxed, so an absent parameter is `null` and adds no condition. `IN` / `NOT_IN` properties are a `List` of the field type (an empty list also adds no condition); `IS_NULL` properties are `Boolean`. Suffixed parameters carry two annotations — `@BindParam` so Spring MVC binds `?price_gt=`, and `@Parameter(name = ...)` so springdoc documents `price_gt` rather than the Java name:
+One property per (field, operation): `EQ` uses the field name (`price`), every other operation `<field><Operation>` (`priceGt`, `statusNotIn`, `deletedAtIsNull`), bound from the query parameter `<field>_<operation>` (`price_gt`, `status_not_in`, `deletedAt_is_null`). Primitive field types are boxed, so an absent parameter is `null` and adds no condition. `IN` / `NOT_IN` properties are a `List` of the field type — of the element type for collection fields — and an empty list also adds no condition; `IS_NULL` properties are `Boolean`. Suffixed parameters carry two annotations — `@BindParam` so Spring MVC binds `?price_gt=`, and `@Parameter(name = ...)` so springdoc documents `price_gt` rather than the Java name:
 
 ```java
 public final class ProductFilterParams {
@@ -275,6 +275,19 @@ public final class ProductFilterParams {
 
 Each non-null filter property adds one condition; conditions are AND-ed.
 
+| Operation | JPA (`CriteriaBuilder`) | MongoDB (`Criteria`) |
+|---|---|---|
+| `EQ` | `cb.equal(path, v)` | `where(f).is(v)` |
+| `NE` | `cb.or(cb.notEqual(path, v), cb.isNull(path))` | `where(f).ne(v)` |
+| `GT` / `GTE` / `LT` / `LTE` | `cb.greaterThan(…)` / `greaterThanOrEqualTo` / `lessThan` / `lessThanOrEqualTo` | `gt` / `gte` / `lt` / `lte` |
+| `LIKE` | `cb.like(cb.lower(path), likePattern(v), '\\')` | `where(f).regex(Pattern.quote(v), "i")` |
+| `IN` | `path.in(list)` | `where(f).in(list)` |
+| `NOT_IN` | `cb.or(cb.not(path.in(list)), cb.isNull(path))` | `where(f).nin(list)` |
+| `IS_NULL` | `cb.isNull(path)` / `cb.isNotNull(path)` | `where(f).is(null)` / `ne(null)` |
+| `IN` on a collection | `<field>HasAny(...)` (EXISTS subquery) | `where(f).in(list)` |
+| `NOT_IN` on a collection | `cb.not(<field>HasAny(...))` | `where(f).nin(list)` |
+| `IS_NULL` on a collection | `cb.isEmpty(path)` / `cb.isNotEmpty(path)` | `where(f + ".0").exists(!v)` |
+
 - **JPA** — returns `Specification<Entity>`, executed with `repository.findAll(spec)` / `findAll(spec, pageable)`. A `likePattern` helper is added when `LIKE` is used; it lower-cases the value and escapes `%`, `_` and `\`.
 - **Collection fields** (JPA `@ElementCollection`) — `IN` / `NOT_IN` call a generated `<field>HasAny(root, query, cb, values)` helper: an `EXISTS` subquery that correlates the outer root and joins the collection, so matching rows are not duplicated.
 - **MongoDB** — returns a `Query` built from `Criteria`, executed with `mongoTemplate.find(...)` (and `count(...)` for pageable). `LIKE` uses `Pattern.quote(value)` with the `i` option.
@@ -295,6 +308,22 @@ public static Specification<Product> withFilters(ProductFilterParams f) {
 ---
 
 ## Error responses from generated controllers
+
+A filter value that cannot be converted (`?price_gt=abc`, `?deletedAt_is_null=maybe`, a non-ISO date) is rejected while binding `<Entity>FilterParams`, before any query runs. The response is the `400` validation error below, with the `errors` map keyed by the **query parameter name** the client sent:
+
+```json
+{
+  "type": "urn:springxpose:validation-error",
+  "title": "Validation failed",
+  "status": 400,
+  "detail": "One or more fields failed validation.",
+  "errors": {
+    "price_gt": "Failed to convert value of type 'java.lang.String' to required type 'java.math.BigDecimal'; ...",
+    "deletedAt_is_null": "Failed to convert value of type 'java.lang.String' to required type 'java.lang.Boolean'; Invalid boolean value [maybe]"
+  }
+}
+```
+
 
 All generated controllers benefit from `SpringXposeExceptionHandler` (auto-configured by the starter). Responses follow **RFC 9457 Problem Detail** format:
 

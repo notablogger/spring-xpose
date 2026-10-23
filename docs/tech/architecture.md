@@ -1,6 +1,6 @@
 # Architecture — spring-xpose
 
-spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes **or `@ExposeDocument` on MongoDB document classes** and writes six `.java` source files per annotated class into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
+spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes **or `@ExposeDocument` on MongoDB document classes** and writes six `.java` source files per annotated class — eight when fields carry `@ExposeField` filters — into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
 
 ---
 
@@ -47,6 +47,10 @@ annotations  ←  processor  ←  (user's app at compile time)
 │          ├──▶ DtoGenerator          → ProductDto.java        │
 │          ├──▶ RequestDtoGenerator   → ProductRequestDto.java │
 │          ├──▶ MapperGenerator       → ProductMapper.java     │
+│          ├──▶ FilterParamsGenerator → ProductFilterParams.java│
+│          │      (only with @ExposeField filters)             │
+│          ├──▶ SpecificationGenerator → ProductSpec.java      │
+│          │      (only with @ExposeField filters)             │
 │          ├──▶ RestControllerGenerator → ProductController.java│
 │          └──▶ SecurityConfigurerGenerator → ProductSecurityConfigurer.java
 │                                                              │
@@ -173,6 +177,14 @@ classDiagram
     class MapperGenerator {
         +generate(EntityModel)
     }
+    class FilterParamsGenerator {
+        +generate(EntityModel)
+        <<only with @ExposeField filters>>
+    }
+    class SpecificationGenerator {
+        +generate(EntityModel)
+        <<only with @ExposeField filters>>
+    }
     class RestControllerGenerator {
         +generate(EntityModel)
     }
@@ -184,6 +196,8 @@ classDiagram
     ExposeEntityProcessor --> DtoGenerator
     ExposeEntityProcessor --> RequestDtoGenerator
     ExposeEntityProcessor --> MapperGenerator
+    ExposeEntityProcessor --> FilterParamsGenerator
+    ExposeEntityProcessor --> SpecificationGenerator
     ExposeEntityProcessor --> RestControllerGenerator
     ExposeEntityProcessor --> SecurityConfigurerGenerator
 
