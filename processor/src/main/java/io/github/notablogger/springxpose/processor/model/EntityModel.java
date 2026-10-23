@@ -235,10 +235,10 @@ public record EntityModel(
     private static boolean collectFilter(VariableElement field, boolean isRelation, StoreType storeType,
                                          List<FilterFieldModel> filters, ProcessingEnvironment env) {
         ExposeField exposeField = field.getAnnotation(ExposeField.class);
-        if (exposeField == null || exposeField.operations().length == 0) return true;
+        if (exposeField == null || exposeField.filterOperations().length == 0) return true;
 
         Set<FilterOperation> operations = EnumSet.noneOf(FilterOperation.class);
-        operations.addAll(Arrays.asList(exposeField.operations()));
+        operations.addAll(Arrays.asList(exposeField.filterOperations()));
         String fieldName = field.getSimpleName().toString();
 
         if (isRelation) {

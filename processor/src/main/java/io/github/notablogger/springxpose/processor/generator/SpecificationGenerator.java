@@ -46,7 +46,7 @@ import java.util.List;
  * {@code nin}; empty collections match) and IS_NULL "null or empty" (JPA: {@code isEmpty},
  * Mongo: {@code tags.0} does not exist).
  *
- * <p>Example JPA output for {@code @ExposeField(operations = {EQ, GT}) BigDecimal price}:
+ * <p>Example JPA output for {@code @ExposeField(filterOperations = {EQ, GT}) BigDecimal price}:
  * <pre>
  * public class ProductSpec {
  *     public static Specification&lt;Product&gt; withFilters(ProductFilterParams f) {
@@ -62,7 +62,7 @@ import java.util.List;
  * }
  * </pre>
  *
- * <p>Example MongoDB output for {@code @ExposeField(operations = EQ) String author}:
+ * <p>Example MongoDB output for {@code @ExposeField(filterOperations = EQ) String author}:
  * <pre>
  * public class NoteSpec {
  *     public static Query withFilters(NoteFilterParams f) {

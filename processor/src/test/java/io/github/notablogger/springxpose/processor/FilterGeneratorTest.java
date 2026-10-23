@@ -38,20 +38,20 @@ class FilterGeneratorTest {
     /** Every operation on a JPA entity; succeeding compilation also type-checks the generated code. */
     private static final JavaFileObject PRODUCT = product("""
             @NotBlank
-            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.NE, FilterOperation.LIKE})
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.NE, FilterOperation.LIKE})
             private String name;
 
-            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.GT, FilterOperation.GTE,
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.GT, FilterOperation.GTE,
                                        FilterOperation.LT, FilterOperation.LTE})
             private java.math.BigDecimal price;
 
-            @ExposeField(operations = {FilterOperation.GT, FilterOperation.LT})
+            @ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LT})
             private int stock;
 
-            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.IN, FilterOperation.NOT_IN})
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.IN, FilterOperation.NOT_IN})
             private Status status;
 
-            @ExposeField(operations = FilterOperation.IS_NULL)
+            @ExposeField(filterOperations = FilterOperation.IS_NULL)
             private java.time.Instant deletedAt;
 
             @ExposeField
@@ -73,14 +73,14 @@ class FilterGeneratorTest {
         public class Note {
             @Id private String id;
 
-            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.NE, FilterOperation.LIKE,
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.NE, FilterOperation.LIKE,
                                        FilterOperation.IN, FilterOperation.NOT_IN})
             private String author;
 
-            @ExposeField(operations = {FilterOperation.GT, FilterOperation.LTE, FilterOperation.IS_NULL})
+            @ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LTE, FilterOperation.IS_NULL})
             private java.time.Instant createdAt;
 
-            @ExposeField(operations = {FilterOperation.IN, FilterOperation.NOT_IN, FilterOperation.IS_NULL})
+            @ExposeField(filterOperations = {FilterOperation.IN, FilterOperation.NOT_IN, FilterOperation.IS_NULL})
             private java.util.List<String> labels;
 
             public String getId() { return id; }
@@ -235,7 +235,7 @@ class FilterGeneratorTest {
     @Test
     void likeHelperOnlyGeneratedWhenLikeIsUsed() throws Exception {
         Compilation c = compile(product("""
-            @ExposeField(operations = FilterOperation.EQ)
+            @ExposeField(filterOperations = FilterOperation.EQ)
             private String name;
             """));
 
@@ -268,11 +268,11 @@ class FilterGeneratorTest {
 
     private static final JavaFileObject PRODUCT_WITH_TAGS = product("""
             @ElementCollection
-            @ExposeField(operations = {FilterOperation.IN, FilterOperation.NOT_IN, FilterOperation.IS_NULL})
+            @ExposeField(filterOperations = {FilterOperation.IN, FilterOperation.NOT_IN, FilterOperation.IS_NULL})
             private java.util.List<String> tags;
 
             @ElementCollection
-            @ExposeField(operations = FilterOperation.IN)
+            @ExposeField(filterOperations = FilterOperation.IN)
             private java.util.Set<Integer> codes;
             """);
 
@@ -320,7 +320,7 @@ class FilterGeneratorTest {
     void scalarOperationsOnCollectionFail() {
         Compilation c = compile(product("""
             @ElementCollection
-            @ExposeField(operations = {FilterOperation.EQ, FilterOperation.LIKE, FilterOperation.GT})
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.LIKE, FilterOperation.GT})
             private java.util.List<String> tags;
             """));
 
@@ -333,7 +333,7 @@ class FilterGeneratorTest {
     @Test
     void jpaCollectionWithoutElementCollectionFails() {
         Compilation c = compile(product("""
-            @ExposeField(operations = FilterOperation.IN)
+            @ExposeField(filterOperations = FilterOperation.IN)
             private java.util.List<String> tags;
             """));
 
@@ -346,7 +346,7 @@ class FilterGeneratorTest {
     void rawCollectionFails() {
         Compilation c = compile(product("""
             @ElementCollection
-            @ExposeField(operations = FilterOperation.IN)
+            @ExposeField(filterOperations = FilterOperation.IN)
             private java.util.List tags;
             """));
 
@@ -357,7 +357,7 @@ class FilterGeneratorTest {
     @Test
     void arrayFieldOnlySupportsIsNull() {
         Compilation c = compile(product("""
-            @ExposeField(operations = {FilterOperation.IN, FilterOperation.IS_NULL})
+            @ExposeField(filterOperations = {FilterOperation.IN, FilterOperation.IS_NULL})
             private String[] codes;
             """));
 
@@ -408,7 +408,7 @@ class FilterGeneratorTest {
     @Test
     void rangeOperationOnNonComparableTypeFails() {
         Compilation c = compile(product("""
-            @ExposeField(operations = FilterOperation.GT)
+            @ExposeField(filterOperations = FilterOperation.GT)
             private java.util.Map<String, String> attributes;
             """));
 
@@ -420,7 +420,7 @@ class FilterGeneratorTest {
     @Test
     void likeOnNonStringFails() {
         Compilation c = compile(product("""
-            @ExposeField(operations = FilterOperation.LIKE)
+            @ExposeField(filterOperations = FilterOperation.LIKE)
             private java.math.BigDecimal price;
             """));
 
@@ -431,7 +431,7 @@ class FilterGeneratorTest {
     @Test
     void isNullOnPrimitiveFails() {
         Compilation c = compile(product("""
-            @ExposeField(operations = FilterOperation.IS_NULL)
+            @ExposeField(filterOperations = FilterOperation.IS_NULL)
             private int stock;
             """));
 
@@ -443,7 +443,7 @@ class FilterGeneratorTest {
     void relationFieldCannotBeFiltered() {
         Compilation c = compile(CATEGORY, product("""
             @ManyToOne
-            @ExposeField(operations = FilterOperation.EQ)
+            @ExposeField(filterOperations = FilterOperation.EQ)
             private Category category;
             """));
 
@@ -454,10 +454,10 @@ class FilterGeneratorTest {
     @Test
     void clashingFilterNamesFail() {
         Compilation c = compile(product("""
-            @ExposeField(operations = FilterOperation.GT)
+            @ExposeField(filterOperations = FilterOperation.GT)
             private java.math.BigDecimal price;
 
-            @ExposeField(operations = FilterOperation.EQ)
+            @ExposeField(filterOperations = FilterOperation.EQ)
             private java.math.BigDecimal priceGt;
             """));
 

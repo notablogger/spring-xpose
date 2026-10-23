@@ -2,7 +2,7 @@ package io.github.notablogger.springxpose.annotation;
 
 /**
  * Comparison operations a field can expose as query filters on the generated
- * {@code GET /api/<path>} (findAll) endpoint. Declared via {@link ExposeField#operations()}.
+ * {@code GET /api/<path>} (findAll) endpoint. Declared via {@link ExposeField#filterOperations()}.
  * <p>
  * Each operation becomes its own optional query parameter. {@link #EQ} uses the plain
  * field name; every other operation appends a suffix:

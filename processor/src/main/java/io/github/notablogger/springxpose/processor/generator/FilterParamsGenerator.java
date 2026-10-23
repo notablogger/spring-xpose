@@ -11,7 +11,7 @@ import java.io.IOException;
 
 /**
  * Generates a {@code <Entity>FilterParams} class for entities/documents with
- * {@code @ExposeField(operations = ...)} fields. It is bound from query parameters via
+ * {@code @ExposeField(filterOperations = ...)} fields. It is bound from query parameters via
  * {@code @ModelAttribute} in the generated controller's {@code findAll} method.
  *
  * <p>One property per (field, operation) pair. EQ uses the field name; other operations use a
@@ -24,7 +24,7 @@ import java.io.IOException;
  * Primitive types are boxed so absent parameters bind as {@code null} (ignored). IN / NOT_IN
  * properties are a {@code List} of the field type; IS_NULL properties are {@code Boolean}.
  *
- * <p>Example output for {@code @ExposeField(operations = {EQ, GT}) BigDecimal price}:
+ * <p>Example output for {@code @ExposeField(filterOperations = {EQ, GT}) BigDecimal price}:
  * <pre>
  * public final class ProductFilterParams {
  *     &#64;Parameter(name = "price", description = "price equals")

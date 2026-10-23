@@ -7,7 +7,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * A field declared filterable via {@code @ExposeField(operations = ...)}.
+ * A field declared filterable via {@code @ExposeField(filterOperations = ...)}.
  * Each operation becomes one query parameter / one {@code FilterParams} property.
  */
 public record FilterFieldModel(
