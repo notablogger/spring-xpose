@@ -287,6 +287,8 @@ Each non-null filter property adds one condition; conditions are AND-ed.
 | `IN` on a collection | `<field>HasAny(...)` (EXISTS subquery) | `where(f).in(list)` |
 | `NOT_IN` on a collection | `cb.not(<field>HasAny(...))` | `where(f).nin(list)` |
 | `IS_NULL` on a collection | `cb.isEmpty(path)` / `cb.isNotEmpty(path)` | `where(f + ".0").exists(!v)` |
+| To-one relation (`categoryId…`) | as above on `root.get("category").get("id")` (FK column, no join); null checks on `root.get("category")` | — |
+| To-many relation (`suppliers_in…`) | as collections; `<field>HasAny` compares `correlated.join("suppliers").get("id")` | — |
 
 - **JPA** — returns `Specification<Entity>`, executed with `repository.findAll(spec)` / `findAll(spec, pageable)`. A `likePattern` helper is added when `LIKE` is used; it lower-cases the value and escapes `%`, `_` and `\`.
 - **Collection fields** (JPA `@ElementCollection`) — `IN` / `NOT_IN` call a generated `<field>HasAny(root, query, cb, values)` helper: an `EXISTS` subquery that correlates the outer root and joins the collection, so matching rows are not duplicated.

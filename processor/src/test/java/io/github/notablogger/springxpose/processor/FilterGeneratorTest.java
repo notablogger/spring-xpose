@@ -450,16 +450,138 @@ class FilterGeneratorTest {
         assertThat(c).hadErrorContaining("hidden field 'secret' cannot have filterOperations");
     }
 
+    // ── Relation filters (by id) ──────────────────────────────────────────────
+
+    private static final JavaFileObject BASE_ENTITY = JavaFileObjects.forSourceString(
+        "com.example.entity.BaseEntity",
+        """
+        package com.example.entity;
+        import jakarta.persistence.*;
+        @MappedSuperclass
+        public abstract class BaseEntity {
+            @Id private java.util.UUID uuid;
+            public java.util.UUID getUuid() { return uuid; }
+            public void setUuid(java.util.UUID uuid) { this.uuid = uuid; }
+        }
+        """
+    );
+
+    /** Id {@code uuid} of type UUID, inherited from a @MappedSuperclass. */
+    private static final JavaFileObject TAG = JavaFileObjects.forSourceString(
+        "com.example.entity.Tag",
+        """
+        package com.example.entity;
+        import jakarta.persistence.*;
+        @Entity
+        public class Tag extends BaseEntity {}
+        """
+    );
+
+    private static final JavaFileObject PRODUCT_WITH_RELATIONS = product("""
+            @ManyToOne
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.NE, FilterOperation.IN,
+                                             FilterOperation.NOT_IN, FilterOperation.IS_NULL})
+            private Category category;
+
+            @ManyToMany
+            @ExposeField(filterOperations = {FilterOperation.IN, FilterOperation.NOT_IN, FilterOperation.IS_NULL})
+            private java.util.Set<Tag> tags;
+
+            public Category getCategory() { return category; }
+            public void setCategory(Category category) { this.category = category; }
+            public java.util.Set<Tag> getTags() { return tags; }
+            public void setTags(java.util.Set<Tag> tags) { this.tags = tags; }
+            """);
+
     @Test
-    void relationFieldCannotBeFiltered() {
+    void toOneRelationFiltersBindTheRelatedIdAsCategoryId() throws Exception {
+        Compilation c = compile(CATEGORY, BASE_ENTITY, TAG, PRODUCT_WITH_RELATIONS);
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductFilterParams");
+        assertTrue(src.contains("Long categoryId,"), src);
+        assertTrue(src.contains("@BindParam(\"categoryId_ne\") Long categoryIdNe"), src);
+        assertTrue(src.contains("@BindParam(\"categoryId_in\") List<Long> categoryIdIn"), src);
+        assertTrue(src.contains("@BindParam(\"categoryId_not_in\") List<Long> categoryIdNotIn"), src);
+        assertTrue(src.contains("@BindParam(\"categoryId_is_null\") Boolean categoryIdIsNull"), src);
+        assertTrue(src.contains("category id equals"), src);
+    }
+
+    @Test
+    void toManyRelationFiltersBindListsOfTheRelatedIdType() throws Exception {
+        Compilation c = compile(CATEGORY, BASE_ENTITY, TAG, PRODUCT_WITH_RELATIONS);
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductFilterParams");
+        assertTrue(src.contains("@BindParam(\"tags_in\") List<UUID> tagsIn"), src);
+        assertTrue(src.contains("@BindParam(\"tags_not_in\") List<UUID> tagsNotIn"), src);
+        assertTrue(src.contains("tags has any of the ids (comma-separated)"), src);
+    }
+
+    @Test
+    void jpaRelationSpecComparesTheRelatedId() throws Exception {
+        Compilation c = compile(CATEGORY, BASE_ENTITY, TAG, PRODUCT_WITH_RELATIONS);
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductSpec");
+        assertTrue(src.contains("cb.equal(root.get(\"category\").get(\"id\"), f.getCategoryId())"), src);
+        assertTrue(src.contains("cb.or(cb.notEqual(root.get(\"category\").get(\"id\"), f.getCategoryIdNe()), cb.isNull(root.get(\"category\")))"), src);
+        assertTrue(src.contains("root.get(\"category\").get(\"id\").in(f.getCategoryIdIn())"), src);
+        assertTrue(src.contains("cb.or(cb.not(root.get(\"category\").get(\"id\").in(f.getCategoryIdNotIn())), cb.isNull(root.get(\"category\")))"), src);
+        assertTrue(src.contains("f.getCategoryIdIsNull() ? cb.isNull(root.get(\"category\")) : cb.isNotNull(root.get(\"category\"))"), src);
+        assertTrue(src.contains("predicates.add(tagsHasAny(root, query, cb, f.getTagsIn()))"), src);
+        assertTrue(src.contains("predicates.add(cb.not(tagsHasAny(root, query, cb, f.getTagsNotIn())))"), src);
+        // the related id is found by its real name, on the @MappedSuperclass
+        assertTrue(src.contains("correlated.join(\"tags\").get(\"uuid\").in(values)"), src);
+        assertTrue(src.contains("cb.isEmpty(root.<Set<Tag>>get(\"tags\"))"), src);
+    }
+
+    @Test
+    void rangeAndLikeOnRelationFail() {
         Compilation c = compile(CATEGORY, product("""
             @ManyToOne
-            @ExposeField(filterOperations = FilterOperation.EQ)
+            @ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LIKE})
             private Category category;
             """));
 
         assertThat(c).failed();
-        assertThat(c).hadErrorContaining("relation field 'category' cannot be filtered");
+        assertThat(c).hadErrorContaining("GT is not supported on relation 'category' — relation filters compare ids: use EQ, NE, IN, NOT_IN or IS_NULL");
+        assertThat(c).hadErrorContaining("LIKE is not supported on relation 'category'");
+    }
+
+    @Test
+    void eqOnToManyRelationFails() {
+        Compilation c = compile(CATEGORY, BASE_ENTITY, TAG, product("""
+            @ManyToMany
+            @ExposeField(filterOperations = FilterOperation.EQ)
+            private java.util.Set<Tag> tags;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("EQ is not supported on relation 'tags' — relation filters compare ids: use IN (has any of), NOT_IN (has none of) or IS_NULL");
+    }
+
+    @Test
+    void inverseOneToOneCannotBeFiltered() {
+        Compilation c = compile(JavaFileObjects.forSourceString("com.example.entity.Passport",
+            """
+            package com.example.entity;
+            import jakarta.persistence.*;
+            @Entity
+            public class Passport {
+                @Id @GeneratedValue private Long id;
+                @OneToOne private Product owner;
+                public Long getId() { return id; }
+                public void setId(Long id) { this.id = id; }
+            }
+            """), product("""
+            @OneToOne(mappedBy = "owner")
+            @ExposeField(filterOperations = FilterOperation.IS_NULL)
+            private Passport passport;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("relation field 'passport' is the inverse side of a @OneToOne (mappedBy)");
     }
 
     @Test

@@ -36,7 +36,7 @@ Every generator receives an `EntityModel` record, not the raw `TypeElement`. Thi
 | Related entity type | `DeclaredType.getTypeArguments().get(0)` for collections, `DeclaredType.toString()` for single |
 | Jakarta Validation annotations | `AnnotationMirror` filter on `jakarta.validation.*` prefix |
 | Field types | `field.asType()` — stored as a `TypeMirror` so generators emit generic and array types (`List<String>`, `byte[]`) exactly |
-| `@ExposeField` filters | `field.getAnnotation(ExposeField.class).filterOperations()` → `FilterFieldModel` (name, type, element type for collections, operations). Each operation is validated against the field type here; a mismatch is a compile error on the field and `parse()` returns `null` |
+| `@ExposeField` filters | `field.getAnnotation(ExposeField.class).filterOperations()` → `FilterFieldModel` (attribute name, parameter base, type, element type for collections, related `@Id` name for relations, operations). Relation filters look up the related entity's `@Id` (including `@MappedSuperclass`) for the parameter type. Each operation is validated against the field type here; a mismatch is a compile error on the field and `parse()` returns `null` |
 | Base path | `annotation.path()` or `EntityNameUtils.toBasePath(simpleName)` |
 
 If no `@Id` field is found, `parse()` emits a compiler error and returns `null`. `ExposeEntityProcessor` skips null models and continues with the next entity.
@@ -116,7 +116,8 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
 ### `SpecificationGenerator`
 - Only when the model has `@ExposeField` filters
 - Generates `<Entity>Spec.withFilters(FilterParams)`: a JPA `Specification` (`CriteriaBuilder`) or a MongoDB `Query` (`Criteria`); one condition per non-null property, AND-ed
-- Adds a `likePattern` helper when `LIKE` is used and a `<field>HasAny` EXISTS-subquery helper per JPA collection with `IN` / `NOT_IN`
+- Adds a `likePattern` helper when `LIKE` is used and a `<field>HasAny` EXISTS-subquery helper per JPA collection or to-many relation with `IN` / `NOT_IN`
+- To-one relation filters compare `root.get("<field>").get("<relatedId>")`
 - `RepositoryGenerator` adds `JpaSpecificationExecutor` and `RestControllerGenerator` injects `MongoTemplate` (MongoDB) so the controller can run it
 
 ### `RestControllerGenerator`

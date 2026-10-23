@@ -247,7 +247,7 @@ private String name;            // ?name=Widget   ?name_like=widg
 @ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LT})
 private BigDecimal price;       // ?price_gt=10&price_lt=100
 ```
-Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`?status_in=A,B`), `IS_NULL` (`?deletedAt_is_null=true`). All filters are optional and AND-ed. On collection fields (`@ElementCollection List<String> tags`) `IN` / `NOT_IN` mean *has any* / *has none* of the values. Mismatches (e.g. `LIKE` on a number) fail the build. Relations cannot be filtered yet.
+Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`?status_in=A,B`), `IS_NULL` (`?deletedAt_is_null=true`). All filters are optional and AND-ed. On collection fields (`@ElementCollection List<String> tags`) `IN` / `NOT_IN` mean *has any* / *has none* of the values. Relations filter by id: `?categoryId=5`, `?suppliers_in=1,2`. Mismatches (e.g. `LIKE` on a number) fail the build.
 
 → Operations, value formats, validation rules and limitations: **[`docs/tech/annotation-reference.md#exposefield--filtering-findall`](docs/tech/annotation-reference.md#exposefield--filtering-findall)**
 
@@ -354,7 +354,8 @@ Run tests:
 - [x] Request DTO — separate request/response shapes with validation annotation propagation
 - [x] Custom mapper — plug in your own Spring bean via `customMapper = YourMapper.class`
 - [x] Query filtering — `@ExposeField(filterOperations = …)` on fields: `EQ`, `NE`, ranges, `LIKE`, `IN` / `NOT_IN`, `IS_NULL`, collection fields
-- [ ] Relation filters — filter by a related entity's id or attributes
+- [x] Relation filters by id — `?categoryId=5`, `?suppliers_in=1,2`
+- [ ] Relation filters by related attributes — `?category_name=Books`
 - [ ] GraphQL — compile-time DataFetcher wiring
 
 ---
