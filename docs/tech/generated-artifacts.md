@@ -57,8 +57,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 | Source field | Included? | Shape in Dto |
 |---|---|---|
 | `@Id` field | ✅ always | same type |
-| Scalar field | ✅ unless in `ignoredFields` | boxed type (e.g. `long` → `Long`) |
-| `ignoredFields` | ❌ never | — |
+| Scalar field | ✅ unless hidden | boxed type (e.g. `long` → `Long`) |
+| `@ExposeField(hidden = true)` | ❌ never | — |
 | `@ManyToOne` / `@OneToOne` — `ALWAYS_OBJECT` mode | ✅ | full related entity type |
 | `@ManyToOne` / `@OneToOne` — `ALWAYS_IDS` or `IDS_FOR_LIST_OBJECT_FOR_SINGLE` mode | ✅ | `Long <fieldName>Id` |
 | `@OneToMany` / `@ManyToMany` | ❌ always excluded | — prevents circular serialisation |
@@ -68,11 +68,11 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 Entity:
 ```java
 @Entity
-@ExposeEntity(ignoredFields = {"passwordHash"})
+@ExposeEntity
 public class User {
     @Id private Long id;
     private String email;
-    private String passwordHash;
+    @ExposeField(hidden = true) private String passwordHash;
     @ManyToOne private Role role;
 }
 ```
@@ -102,8 +102,8 @@ public class UserDto {
 |---|---|---|
 | `@Id` field | ❌ never | ID comes from the URL path variable |
 | `@Version` field | ❌ never | Managed by JPA |
-| Scalar field | ✅ unless in `ignoredFields` | Jakarta Validation annotations copied |
-| `ignoredFields` | ❌ never | Can't be set via the API |
+| Scalar field | ✅ unless hidden | Jakarta Validation annotations copied |
+| `@ExposeField(hidden = true)` | ❌ never | Can't be set via the API |
 | `@ManyToOne` / `@OneToOne` | ��� | always as `Long <fieldName>Id` |
 | `@OneToMany` / `@ManyToMany` | ❌ always excluded | — |
 
@@ -114,7 +114,7 @@ Continuing from the `User` entity above:
 public class UserRequestDto {
     @NotBlank
     private String email;
-    // passwordHash omitted (ignoredFields)
+    // passwordHash omitted (hidden)
     // id omitted
     private Long roleId;  // always Long, regardless of relationMode
 
@@ -153,7 +153,7 @@ The following targets are always ignored in both methods — they must not be ov
 
 - `@Id` field — managed by JPA (`AUTO`/`IDENTITY`/`SEQUENCE`)
 - `@Version` field (if present) — managed by JPA optimistic locking
-- All `ignoredFields` — not present in `RequestDto`; ignore explicitly to suppress MapStruct warnings
+- All hidden fields — not present in `RequestDto`; ignore explicitly to suppress MapStruct warnings
 - Relation object fields — resolved by the controller via `EntityManager.getReference()`
 
 ### Custom mapper

@@ -67,10 +67,10 @@ class ExposeEntityProcessorTest {
                 import io.github.notablogger.springxpose.annotation.*;
                 import jakarta.persistence.*;
                 @Entity
-                @ExposeEntity(path="books", ignoredFields={"title"})
+                @ExposeEntity(path="books")
                 public class Book {
                     @Id @GeneratedValue private Long id;
-                    private String title;
+                    @ExposeField(hidden = true) private String title;
                     public Long getId() { return id; }
                     public void setId(Long id) { this.id = id; }
                     public String getTitle() { return title; }
@@ -83,12 +83,12 @@ class ExposeEntityProcessorTest {
         assertThat(c).succeeded();
         String dto = c.generatedSourceFile("com.example.entity.generated.BookDto")
             .orElseThrow().getCharContent(false).toString();
-        assertTrue(dto.contains("id"), "DTO must always contain id even when not in ignoredFields");
-        assertFalse(dto.contains("String title"), "ignoredFields should exclude 'title' from DTO");
+        assertTrue(dto.contains("id"), "DTO must always contain id");
+        assertFalse(dto.contains("String title"), "hidden = true should exclude 'title' from DTO");
     }
 
     @Test
-    void ignoredFieldsExcludedFromDto() throws Exception {
+    void hiddenFieldsExcludedFromDto() throws Exception {
         Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
             JavaFileObjects.forSourceString("com.example.entity.Book",
                 """
@@ -96,12 +96,12 @@ class ExposeEntityProcessorTest {
                 import io.github.notablogger.springxpose.annotation.*;
                 import jakarta.persistence.*;
                 @Entity
-                @ExposeEntity(path="books", ignoredFields={"internalNotes", "auditLog"})
+                @ExposeEntity(path="books")
                 public class Book {
                     @Id @GeneratedValue private Long id;
                     private String title;
-                    private String internalNotes;
-                    private String auditLog;
+                    @ExposeField(hidden = true) private String internalNotes;
+                    @ExposeField(hidden = true) private String auditLog;
                     public Long getId() { return id; }
                     public void setId(Long id) { this.id = id; }
                     public String getTitle() { return title; }
@@ -118,9 +118,9 @@ class ExposeEntityProcessorTest {
         assertThat(c).succeeded();
         String dto = c.generatedSourceFile("com.example.entity.generated.BookDto")
             .orElseThrow().getCharContent(false).toString();
-        assertTrue(dto.contains("title"), "non-ignored field 'title' must be in DTO");
-        assertFalse(dto.contains("internalNotes"), "'internalNotes' in ignoredFields must be absent from DTO");
-        assertFalse(dto.contains("auditLog"), "'auditLog' in ignoredFields must be absent from DTO");
+        assertTrue(dto.contains("title"), "non-hidden field 'title' must be in DTO");
+        assertFalse(dto.contains("internalNotes"), "hidden 'internalNotes' must be absent from DTO");
+        assertFalse(dto.contains("auditLog"), "hidden 'auditLog' must be absent from DTO");
     }
 
     @Test
@@ -282,7 +282,7 @@ class ExposeEntityProcessorTest {
         assertThat(c).succeeded();
         String reqDto = c.generatedSourceFile("com.example.entity.generated.BookRequestDto")
             .orElseThrow().getCharContent(false).toString();
-        assertTrue(reqDto.contains("title"), "RequestDto must contain non-ignored scalar fields");
+        assertTrue(reqDto.contains("title"), "RequestDto must contain non-hidden scalar fields");
         assertFalse(reqDto.contains("Long id"), "RequestDto must NOT contain id");
     }
 
@@ -295,11 +295,11 @@ class ExposeEntityProcessorTest {
                 import io.github.notablogger.springxpose.annotation.*;
                 import jakarta.persistence.*;
                 @Entity
-                @ExposeEntity(path="books", ignoredFields={"internalNotes"})
+                @ExposeEntity(path="books")
                 public class Book {
                     @Id @GeneratedValue private Long id;
                     private String title;
-                    private String internalNotes;
+                    @ExposeField(hidden = true) private String internalNotes;
                     public Long getId() { return id; }
                     public void setId(Long id) { this.id = id; }
                     public String getTitle() { return title; }
@@ -313,8 +313,8 @@ class ExposeEntityProcessorTest {
         assertThat(c).succeeded();
         String reqDto = c.generatedSourceFile("com.example.entity.generated.BookRequestDto")
             .orElseThrow().getCharContent(false).toString();
-        assertTrue(reqDto.contains("title"), "RequestDto must include non-ignored 'title'");
-        assertFalse(reqDto.contains("internalNotes"), "RequestDto must exclude ignoredFields");
+        assertTrue(reqDto.contains("title"), "RequestDto must include non-hidden 'title'");
+        assertFalse(reqDto.contains("internalNotes"), "RequestDto must exclude hidden fields");
         assertFalse(reqDto.contains("Long id"), "RequestDto must not include id field");
     }
 

@@ -30,7 +30,8 @@ public record EntityModel(
     Set<String> roles,
     Set<String> readRoles,
     Set<String> writeRoles,
-    Set<String> ignoredFields,
+    /** Fields marked {@code @ExposeField(hidden = true)} — left out of the response and request DTOs. */
+    Set<String> hiddenFields,
     /** Fields declared filterable via {@code @ExposeField}, in declaration order. */
     List<FilterFieldModel> filters,
     /** Fully-qualified class name of the custom mapper, or {@code null} for the generated one. */
@@ -78,6 +79,7 @@ public record EntityModel(
         String idFieldName = null;
         String idClassName = null;
         List<FilterFieldModel> filters = new ArrayList<>();
+        Set<String> hiddenFields = new LinkedHashSet<>();
         boolean filtersValid = true;
         String versionFieldName = null;
 
@@ -108,6 +110,7 @@ public record EntityModel(
                 isOneToOne   = field.getAnnotation(jakarta.persistence.OneToOne.class)   != null;
             }
 
+            if (isHidden(field)) hiddenFields.add(fieldName);
             filtersValid &= collectFilter(field,
                 isManyToOne || isOneToMany || isManyToMany || isOneToOne, storeType, filters, env);
 
@@ -140,14 +143,13 @@ public record EntityModel(
         Set<String> roles          = new LinkedHashSet<>(Arrays.asList(annotation.roles()));
         Set<String> readRoles      = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles     = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
-        Set<String> ignoredFields  = new LinkedHashSet<>(Arrays.asList(annotation.ignoredFields()));
 
         return new EntityModel(
             qualifiedName, simpleName, packageName,
             idFieldName, idClassName, basePath,
             fields, relations, operations,
             annotation.relationMode(), annotation.authType(),
-            roles, readRoles, writeRoles, ignoredFields,
+            roles, readRoles, writeRoles, hiddenFields,
             filters,
             customMapperClassName,
             annotation.pageable(),
@@ -173,6 +175,7 @@ public record EntityModel(
         String idFieldName = null;
         String idClassName = null;
         List<FilterFieldModel> filters = new ArrayList<>();
+        Set<String> hiddenFields = new LinkedHashSet<>();
         boolean filtersValid = true;
 
         for (Element enclosed : element.getEnclosedElements()) {
@@ -188,6 +191,7 @@ public record EntityModel(
 
             if (isId) { idFieldName = fieldName; idClassName = fieldType; }
 
+            if (isHidden(field)) hiddenFields.add(fieldName);
             filtersValid &= collectFilter(field, false, storeType, filters, env);
 
             List<? extends AnnotationMirror> validationAnnotations = field.getAnnotationMirrors().stream()
@@ -209,7 +213,6 @@ public record EntityModel(
         Set<String> roles         = new LinkedHashSet<>(Arrays.asList(annotation.roles()));
         Set<String> readRoles     = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles    = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
-        Set<String> ignoredFields = new LinkedHashSet<>(Arrays.asList(annotation.ignoredFields()));
 
         return new EntityModel(
             qualifiedName, simpleName, packageName,
@@ -217,13 +220,18 @@ public record EntityModel(
             fields, relations, operations,
             RelationMode.IDS_FOR_LIST_OBJECT_FOR_SINGLE, // not used for MONGO
             annotation.authType(),
-            roles, readRoles, writeRoles, ignoredFields,
+            roles, readRoles, writeRoles, hiddenFields,
             filters,
             customMapperClassName,
             annotation.pageable(),
             null, // no @Version for MongoDB documents
             storeType
         );
+    }
+
+    private static boolean isHidden(VariableElement field) {
+        ExposeField exposeField = field.getAnnotation(ExposeField.class);
+        return exposeField != null && exposeField.hidden();
     }
 
     /**
@@ -236,6 +244,13 @@ public record EntityModel(
                                          List<FilterFieldModel> filters, ProcessingEnvironment env) {
         ExposeField exposeField = field.getAnnotation(ExposeField.class);
         if (exposeField == null || exposeField.filterOperations().length == 0) return true;
+
+        if (exposeField.hidden()) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                "@ExposeField: hidden field '" + field.getSimpleName() + "' cannot have filterOperations — "
+                + "a filter would let clients guess the value the API hides", field);
+            return false;
+        }
 
         Set<FilterOperation> operations = EnumSet.noneOf(FilterOperation.class);
         operations.addAll(Arrays.asList(exposeField.filterOperations()));

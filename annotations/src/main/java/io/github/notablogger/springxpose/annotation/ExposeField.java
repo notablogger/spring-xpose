@@ -14,6 +14,9 @@ import java.lang.annotation.*;
  * generates {@code GET /api/products?price=10}, {@code ?price_gt=10} and {@code ?price_lt=100}.
  * All filter parameters are optional and combined with AND.
  * <p>
+ * {@code @ExposeField(hidden = true)} keeps a field out of the API: it is left out of the response
+ * DTO and the request DTO, but stays on the entity for persistence.
+ * <p>
  * Checked at compile time:
  * <ul>
  *   <li>{@code GT}, {@code GTE}, {@code LT}, {@code LTE} need a primitive or {@link Comparable} type.</li>
@@ -25,9 +28,9 @@ import java.lang.annotation.*;
  *   <li>Array fields support only {@code IS_NULL}.</li>
  *   <li>JPA relation fields ({@code @ManyToOne} etc.) cannot be filtered.</li>
  *   <li>Two filters may not map to the same query parameter or property name.</li>
+ *   <li>A {@code hidden} field cannot have {@code filterOperations}: a filter would let clients
+ *       guess the value the API hides.</li>
  * </ul>
- * A field listed in {@code ignoredFields} can still be filtered — and its value guessed through
- * the filter — so only declare filters on fields whose values clients may learn.
  */
 @Target(ElementType.FIELD)
 @Retention(RetentionPolicy.SOURCE)
@@ -39,4 +42,12 @@ public @interface ExposeField {
      * Empty (the default) means the field is not filterable.
      */
     FilterOperation[] filterOperations() default {};
+
+    /**
+     * When {@code true}, the field is excluded from the generated response DTO and request DTO —
+     * clients can neither read nor write it. The entity keeps the field for persistence.
+     * Has no effect on the {@code @Id} field, which is always returned.
+     * Cannot be combined with {@link #filterOperations()}.
+     */
+    boolean hidden() default false;
 }

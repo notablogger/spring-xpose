@@ -6,7 +6,7 @@ spring-xpose provides **two complementary class-level annotations** for compile-
 |---|---|---|---|
 | `@ExposeEntity` | JPA entity class (`@Entity`) | always JPA | SQL databases — Postgres, MySQL, H2, … |
 | `@ExposeDocument` | MongoDB document class (`@Document`) | always MongoDB | MongoDB document collections |
-| `@ExposeField` | field of either | both | query filters on `findAll` — see [`@ExposeField`](#exposefield--filtering-findall) |
+| `@ExposeField` | field of either | both | hiding a field from the API, query filters on `findAll` — see [hidden](#exposefieldhidden--true--hiding-fields-from-the-api), [filters](#exposefield--filtering-findall) |
 
 The annotation you choose determines the persistence backend — there is no `store` parameter to set.
 `@ExposeDocument` additionally omits the JPA-specific `relationMode` attribute (MongoDB documents do not have JPA relations).
@@ -25,10 +25,13 @@ The annotation you choose determines the persistence backend — there is no `st
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    ignoredFields = {"internalNote", "auditTrail"},  // hidden from both response AND request DTO
     customMapper  = MyOrderMapper.class              // optional — omit for MapStruct auto-impl
 )
-public class Order { ... }
+public class Order {
+    @ExposeField(hidden = true) private String internalNote;   // hidden from both response AND request DTO
+    @ExposeField(hidden = true) private String auditTrail;
+    ...
+}
 ```
 
 ## `@ExposeDocument` — Full example
@@ -42,7 +45,6 @@ public class Order { ... }
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    ignoredFields = {"internalTag"},
     customMapper  = MyNoteMapper.class    // optional
 )
 public class Note {
@@ -67,7 +69,6 @@ public class Note {
 | `roles` | `String[]` | `{}` | Roles required for all operations |
 | `readRoles` | `String[]` | `{}` | Roles for GET requests (overrides `roles`) |
 | `writeRoles` | `String[]` | `{}` | Roles for POST/PUT/DELETE (overrides `roles`) |
-| `ignoredFields` | `String[]` | `{}` | Fields excluded from **both** the response DTO and the request DTO |
 | `pageable` | `boolean` | `false` | When `true`, `findAll` accepts `Pageable` and returns `Page<Dto>` |
 | `customMapper` | `Class<?>` | `void.class` | Optional custom Spring bean to use instead of the MapStruct-generated mapper |
 
@@ -130,24 +131,43 @@ In the **request** DTO, relations are **always** represented as `Long <field>Id`
 
 ---
 
-## `ignoredFields` — Hiding fields from the API
+## `@ExposeField(hidden = true)` — Hiding fields from the API
 
-Fields listed in `ignoredFields` are **excluded from both the response DTO and the request DTO**. The entity retains them for persistence — they are never exposed in API responses and cannot be set via the API.
+Fields marked `@ExposeField(hidden = true)` are **excluded from both the response DTO and the request DTO**. The entity retains them for persistence — they are never exposed in API responses and cannot be set via the API.
 
 ```java
-@ExposeEntity(
-    path = "users",
-    ignoredFields = {"passwordHash", "internalScore"}
-)
+@ExposeEntity(path = "users")
 public class User {
     @Id private Long id;
     private String email;
+
+    @ExposeField(hidden = true)
     private String passwordHash;   // stored in DB, never returned or accepted by the API
+
+    @ExposeField(hidden = true)
     private String internalScore;  // same
 }
 ```
 
-`UserDto` contains `id` + `email`. `UserRequestDto` contains `email` only (no `id`, no ignored fields).
+`UserDto` contains `id` + `email`. `UserRequestDto` contains `email` only (no `id`, no hidden fields).
+
+- Works on scalar fields, JPA relations (`@ManyToOne @ExposeField(hidden = true) Category category` drops `categoryId` / `category` from both DTOs) and MongoDB document fields.
+- Has no effect on the `@Id` field, which is always returned.
+- **A hidden field cannot have `filterOperations`** — that is a compile error, because a filter would let clients guess the value the API hides (`?passwordHash=…` returning rows or not).
+
+### Migrating from `ignoredFields`
+
+`ignoredFields` on `@ExposeEntity` / `@ExposeDocument` has been **removed**; mark each field instead. This is a breaking change — code still using `ignoredFields` no longer compiles.
+
+```java
+// before
+@ExposeEntity(path = "users", ignoredFields = {"passwordHash"})
+public class User { private String passwordHash; ... }
+
+// after
+@ExposeEntity(path = "users")
+public class User { @ExposeField(hidden = true) private String passwordHash; ... }
+```
 
 ---
 
@@ -158,6 +178,7 @@ public class User {
 | Attribute | Type | Default | Description |
 |---|---|---|---|
 | `filterOperations` | `FilterOperation[]` | `{}` | Operations exposed as query parameters. Empty means the field is not filterable. |
+| `hidden` | `boolean` | `false` | Leave the field out of both DTOs — see [Hiding fields](#exposefieldhidden--true--hiding-fields-from-the-api). Cannot be combined with `filterOperations`. |
 
 ### Declaring filters
 
@@ -263,9 +284,10 @@ Mistakes fail the build with an error on the offending field instead of producin
 | Filter on a raw collection (`List` without a type argument) or `List<?>` | `collection field 'tags' needs a concrete element type, e.g. List<String>` |
 | Anything but `IS_NULL` on an array | `… does not apply to an array — declare the field as a List to use IN / NOT_IN` |
 | `@ExposeField` on a JPA relation (`@ManyToOne`, `@OneToOne`, `@OneToMany`, `@ManyToMany`) | `relation field 'category' cannot be filtered — only scalar fields support filter operations` |
+| `hidden = true` together with `filterOperations` | `hidden field 'secret' cannot have filterOperations — a filter would let clients guess the value the API hides` |
 | Two filters mapping to the same parameter or property, e.g. `price` + `GT` next to a field `priceGt` + `EQ` | `filter 'priceGt EQ' on Product clashes with 'price GT' — …` |
 
-`@ExposeField` without `filterOperations` (or with an empty array) is allowed and has no effect.
+`@ExposeField` without `filterOperations` (or with an empty array) is not filterable; with `hidden = false` as well it has no effect.
 
 ### Limitations
 
@@ -279,7 +301,7 @@ Mistakes fail the build with an error on the offending field instead of producin
 - **Unknown or misspelled parameters are silently ignored** rather than rejected.
 - **MongoDB field names** in queries are the Java property names; Spring Data maps them to `@Field` names as usual.
 
-> ⚠️ **Hidden fields stay filterable.** A field listed in `ignoredFields` never appears in responses, but if it also has `@ExposeField`, clients can still filter on it — and so guess its value (`?secret=wrong` returns nothing, `?secret=s3cret` returns rows). Only expose filters on fields whose values clients may learn.
+> ⚠️ **Filters reveal values.** Any filterable field lets clients test values, even if they never read the field. Hidden fields therefore cannot be filtered (compile error); for other fields, only add filters where clients may learn the values.
 
 ### Workaround: filtering on a relation today
 
@@ -338,7 +360,7 @@ For entities with `CREATE` or `UPDATE` operations, spring-xpose generates a **`<
 | | `<Entity>Dto` (response) | `<Entity>RequestDto` (request body) |
 |---|---|---|
 | `id` field | ✅ included | ❌ excluded — ID comes from the path variable |
-| `ignoredFields` | ❌ excluded | ❌ excluded |
+| Hidden fields (`@ExposeField(hidden = true)`) | ❌ excluded | ❌ excluded |
 | `@NotBlank`, `@Positive`, etc. | not copied | ✅ copied from entity fields |
 | `@ManyToOne` / `@OneToOne` | depends on `relationMode` | always `Long <field>Id` |
 | `@OneToMany` / `@ManyToMany` | ❌ always excluded | ❌ always excluded |

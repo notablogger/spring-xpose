@@ -83,7 +83,7 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
 
 ### `DtoGenerator`
 - Generates `<Entity>Dto` — the API response shape
-- Includes all scalar fields **except** `ignoredFields`
+- Includes all scalar fields **except** hidden ones (`@ExposeField(hidden = true)`)
 - `@Id` field is always included
 - `@ManyToOne` / `@OneToOne` relations:
   - `ALWAYS_OBJECT` → field of the related entity type (full object)
@@ -93,7 +93,7 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
 
 ### `RequestDtoGenerator`
 - Generates `<Entity>RequestDto` — the API request body shape
-- Never includes `@Id` or `ignoredFields` fields
+- Never includes `@Id` or hidden fields
 - Copies Jakarta Validation annotations (`@NotBlank`, `@Positive`, etc.) from entity fields
 - Relations are always `Long <fieldName>Id` regardless of `relationMode`
 - `@OneToMany` / `@ManyToMany` always omitted
@@ -103,7 +103,7 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
 - Four methods:
   - `toDto(Entity) → Dto` — with `@Mapping(source="rel.id", target="relId")` for ID-mode relations
   - `toDtoList(List<Entity>) → List<Dto>`
-  - `toEntity(RequestDto) → Entity` — ignores id, `@Version`, `ignoredFields`, and relation fields (controller handles those via `EntityManager.getReference`)
+  - `toEntity(RequestDto) → Entity` — ignores id, `@Version`, hidden fields, and relation fields (controller handles those via `EntityManager.getReference`)
   - `updateEntity(RequestDto, @MappingTarget Entity) → void` — same ignores; used by PUT to overlay only request fields onto the loaded entity
 - If `customMapper` is set, omits `@Mapper(componentModel = "spring")` so MapStruct skips auto-generation; the interface is still generated as a contract
 

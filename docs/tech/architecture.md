@@ -76,7 +76,6 @@ classDiagram
         +String[] roles
         +String[] readRoles
         +String[] writeRoles
-        +String[] ignoredFields
         +boolean pageable
         +Class customMapper
     }
@@ -87,10 +86,14 @@ classDiagram
         +String[] roles
         +String[] readRoles
         +String[] writeRoles
-        +String[] ignoredFields
         +boolean pageable
         +Class customMapper
         <<always MongoDB>>
+    }
+    class ExposeField {
+        +FilterOperation[] filterOperations
+        +boolean hidden
+        <<field-level>>
     }
     class Operation {
         <<enumeration>>
@@ -134,7 +137,8 @@ classDiagram
         +Set~String~ roles
         +Set~String~ readRoles
         +Set~String~ writeRoles
-        +Set~String~ ignoredFields
+        +Set~String~ hiddenFields
+        +List~FilterFieldModel~ filters
         +String customMapperClassName
         +boolean pageable
         +String versionFieldName

@@ -16,7 +16,7 @@ import java.io.IOException;
  * <p>Rules:
  * <ul>
  *   <li>The {@code id} field is excluded — the ID comes from the path variable, not the body.</li>
- *   <li>Fields in {@code ignoredFields} are excluded.</li>
+ *   <li>Fields in {@code @ExposeField(hidden = true)} are excluded.</li>
  *   <li>Jakarta Validation annotations on the entity field are re-applied to the request DTO field.</li>
  *   <li>SINGLE relations (ManyToOne / OneToOne) are always represented as {@code Long <field>Id}
  *       so clients send plain IDs, keeping the API simple and decoupled from the entity graph.</li>
@@ -41,11 +41,11 @@ public class RequestDtoGenerator {
                     + "Relation fields are expressed as {@code Long <field>Id}.\n",
                 model.entitySimpleName());
 
-        // Scalar fields — skip id, @Version, and ignoredFields; carry validation annotations
+        // Scalar fields — skip id, @Version and hidden fields; carry validation annotations
         for (FieldModel field : model.fields()) {
             if (field.isId()) continue; // id comes from path, not body
             if (model.hasVersion() && field.name().equals(model.versionFieldName())) continue; // skip @Version field
-            if (model.ignoredFields().contains(field.name())) continue;
+            if (model.hiddenFields().contains(field.name())) continue;
 
             // From the TypeMirror, not the type's text: keeps generics (List<String>) and arrays
             TypeName typeName = TypeName.get(field.type()).box();
@@ -64,7 +64,7 @@ public class RequestDtoGenerator {
         // Relation fields — SINGLE only, always as Long <field>Id
         for (RelationFieldModel rel : model.relations()) {
             if ("COLLECTION".equals(rel.relationType())) continue;
-            if (model.ignoredFields().contains(rel.name())) continue;
+            if (model.hiddenFields().contains(rel.name())) continue;
 
             String idFieldName = rel.name() + "Id";
             dto.addField(TypeName.LONG.box(), idFieldName, Modifier.PRIVATE);

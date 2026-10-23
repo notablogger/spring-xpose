@@ -30,7 +30,7 @@ spring-xpose eliminates steps 1–5 entirely.
 | Per-entity security | ✅ generated per entity | Partial (supported via Spring Security, but configured manually) | Manual |
 | OpenAPI support | ✅ generated annotations + optional springdoc autoconfig | Partial (typically via springdoc integration) | Manual |
 | Readable generated source | ✅ | ❌ | N/A |
-| Field shaping / exclusion | ✅ (`ignoredFields` + generated DTOs) | Partial (projections / excerpts / export controls, no generated DTOs) | Manual |
+| Field shaping / exclusion | ✅ (`@ExposeField(hidden = true)` + generated DTOs) | Partial (projections / excerpts / export controls, no generated DTOs) | Manual |
 | Role-based read/write split | ✅ (`readRoles` / `writeRoles`) | Partial (method-level security overrides, manual) | Manual |
 
 > **Note:** This comparison is specifically against **Spring Data REST** (repository-to-REST export), not Spring Data as a whole. In the table above, **Partial** means the capability exists with Spring Data REST plus extra Spring Security / springdoc customization, but it is not generated for you as part of the default repository export model.
@@ -206,10 +206,13 @@ spring-xpose provides two complementary annotations:
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    ignoredFields = {"internalNote"},
     customMapper  = MyOrderMapper.class
 )
-public class Order { ... }
+public class Order {
+    @ExposeField(hidden = true)
+    private String internalNote;    // stored, never returned or accepted by the API
+    ...
+}
 ```
 
 **MongoDB document:**
@@ -233,7 +236,6 @@ public class Note {
 | `expose` | all five operations | Which HTTP operations to generate |
 | `authType` | `NONE` | `NONE`, `BASIC`, or `OAUTH2` |
 | `readRoles` / `writeRoles` | `{}` | Role-based access split |
-| `ignoredFields` | `{}` | Fields excluded from both response and request DTOs |
 | `customMapper` | `void.class` | Bring your own Spring bean mapper |
 | `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | `@ExposeEntity` only — how related entities appear in the DTO |
 
@@ -279,7 +281,7 @@ All generated controllers are annotated with `@Tag`, `@Operation`, and `@ApiResp
 
 ## Sample Project
 
-→ **[spring-xpose-sample-rest](https://github.com/notablogger/spring-xpose-sample-rest)** — a runnable Spring Boot app demonstrating DTOs, `ignoredFields`, all three auth types, relation modes, validation, and Swagger UI.
+→ **[spring-xpose-sample-rest](https://github.com/notablogger/spring-xpose-sample-rest)** — a runnable Spring Boot app demonstrating DTOs, hidden fields, all three auth types, relation modes, validation, and Swagger UI.
 
 ---
 
@@ -347,7 +349,7 @@ Run tests:
 - [x] MongoDB support via `@ExposeDocument` (MongoDB-native, no JPA terminology)
 - [x] Per-entity security (NONE / BASIC / OAUTH2)
 - [x] Relation-aware DTO serialisation
-- [x] `ignoredFields` — hide entity fields from the API
+- [x] `@ExposeField(hidden = true)` — hide entity fields from the API (replaces the former `ignoredFields`)
 - [x] OpenAPI / Swagger UI with auth scheme
 - [x] Request DTO — separate request/response shapes with validation annotation propagation
 - [x] Custom mapper — plug in your own Spring bean via `customMapper = YourMapper.class`

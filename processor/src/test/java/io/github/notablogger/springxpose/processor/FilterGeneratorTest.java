@@ -440,6 +440,17 @@ class FilterGeneratorTest {
     }
 
     @Test
+    void hiddenFieldCannotBeFiltered() {
+        Compilation c = compile(product("""
+            @ExposeField(hidden = true, filterOperations = FilterOperation.EQ)
+            private String secret;
+            """));
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("hidden field 'secret' cannot have filterOperations");
+    }
+
+    @Test
     void relationFieldCannotBeFiltered() {
         Compilation c = compile(CATEGORY, product("""
             @ManyToOne

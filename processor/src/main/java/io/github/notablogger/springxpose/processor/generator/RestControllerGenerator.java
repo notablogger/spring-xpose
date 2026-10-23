@@ -46,7 +46,7 @@ public class RestControllerGenerator {
         boolean hasWriteOps  = model.operations().contains(Operation.CREATE)
                             || model.operations().contains(Operation.UPDATE);
         boolean hasRelations = model.relations().stream()
-            .anyMatch(r -> "SINGLE".equals(r.relationType()) && !model.ignoredFields().contains(r.name()));
+            .anyMatch(r -> "SINGLE".equals(r.relationType()) && !model.hiddenFields().contains(r.name()));
 
         // EntityManager is only needed for JPA entities that have write ops with relations
         boolean needsEntityManager = model.storeType() == StoreType.JPA
@@ -400,7 +400,7 @@ public class RestControllerGenerator {
             MethodSpec.Builder method, EntityModel model, ClassName entityManager) {
         for (RelationFieldModel rel : model.relations()) {
             if ("COLLECTION".equals(rel.relationType())) continue;
-            if (model.ignoredFields().contains(rel.name())) continue;
+            if (model.hiddenFields().contains(rel.name())) continue;
             String getterName = "get" + capitalize(rel.name()) + "Id";
             String setterName = "set" + capitalize(rel.name());
             ClassName relatedClass = ClassName.bestGuess(rel.relatedEntityType());
