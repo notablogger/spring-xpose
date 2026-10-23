@@ -337,7 +337,13 @@ public class RestControllerGenerator {
             method.addParameter(filtersParam.addAnnotation(modelAttribute).build());
         }
         if (isPageable) {
-            method.addParameter(pageableClass, "pageable");
+            // Without @ParameterObject springdoc documents one required "pageable" object
+            // instead of the optional page / size / sort query parameters
+            ParameterSpec.Builder pageableParam = ParameterSpec.builder(pageableClass, "pageable");
+            if (processingEnv.getElementUtils().getTypeElement(SPRINGDOC_PARAMETER_OBJECT) != null) {
+                pageableParam.addAnnotation(ClassName.bestGuess(SPRINGDOC_PARAMETER_OBJECT));
+            }
+            method.addParameter(pageableParam.build());
         }
 
         // Return type
