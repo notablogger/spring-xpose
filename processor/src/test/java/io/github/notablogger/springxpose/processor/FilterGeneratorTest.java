@@ -339,6 +339,7 @@ class FilterGeneratorTest {
 
         assertThat(c).failed();
         assertThat(c).hadErrorContaining("collection field 'tags' must be an @ElementCollection to be filtered");
+        assertThat(c).hadErrorContaining("stored in a single column (Hibernate's array mapping");
     }
 
     @Test

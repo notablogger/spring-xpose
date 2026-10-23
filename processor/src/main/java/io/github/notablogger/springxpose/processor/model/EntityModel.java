@@ -259,11 +259,14 @@ public record EntityModel(
                 + "e.g. List<String>", field);
             return false;
         }
-        // Element-wise filtering joins the collection table; a converter-mapped column has none
+        // Element-wise filtering joins the collection table. Without @ElementCollection the list lives in
+        // one column (Hibernate's array mapping, a converter or JSON), which JPA queries can't look inside.
         if (isCollection && storeType == StoreType.JPA
                 && field.getAnnotation(jakarta.persistence.ElementCollection.class) == null) {
             env.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                "@ExposeField: collection field '" + fieldName + "' must be an @ElementCollection to be filtered",
+                "@ExposeField: collection field '" + fieldName + "' must be an @ElementCollection to be filtered"
+                + " — without it the list is stored in a single column (Hibernate's array mapping,"
+                + " a converter or JSON), which these filters can't search element by element",
                 field);
             return false;
         }

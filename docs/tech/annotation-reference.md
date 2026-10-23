@@ -211,7 +211,7 @@ private List<String> tags;    // ?tags_in=sale,new  ?tags_not_in=clearance  ?tag
 
 A single value is just `?tags_in=sale`. The parameter binds to a `List` of the element type. JPA uses a subquery rather than a join, so a row that matches several values is returned once and paging totals stay correct.
 
-Other operations (`EQ`, `NE`, ranges, `LIKE`) are compile errors on collections. JPA collections must be `@ElementCollection` — a collection stored in one column through a converter cannot be filtered element-wise. Arrays support only `IS_NULL`; declare the field as a `List` to filter its elements.
+Other operations (`EQ`, `NE`, ranges, `LIKE`) are compile errors on collections. JPA collections must be `@ElementCollection`. Without it the list is stored in a single column — an unannotated `List<String>` becomes a native array column under Hibernate 6, and converters or JSON mappings store text — and standard JPA queries cannot look inside that column. Arrays support only `IS_NULL`; declare the field as a `List` to filter its elements.
 - **Compile-time errors** for operations that don't fit the field: range operations on non-comparable types, `LIKE` on non-`String` fields, `IS_NULL` on primitives, scalar operations on collections, filters on JPA relation fields, and two filters mapping to the same parameter name.
 
 Generated code: `<Entity>FilterParams` (bound with `@ModelAttribute`) and `<Entity>Spec` (JPA `Specification` or MongoDB `Query`). JPA repositories also extend `JpaSpecificationExecutor`. See [`generated-artifacts.md`](generated-artifacts.md).
