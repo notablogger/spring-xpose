@@ -11,6 +11,7 @@ This page compares the features and capabilities offered by **Spring Data REST**
 | Boilerplate Reduction   | Reduces repetitive coding for CRUD operations by auto-generating code. | Yes                       | Partial (only basic endpoints generated) |
 | API Generation          | Automatically generates REST endpoints with OpenAPI documentation.        | Yes                       | Yes (basic HAL-compliant APIs) |
 | Query Derivation        | Automatically generates queries from method names.                      | Yes                       | Yes |
+| Query Filtering         | Typed, documented search endpoint (`POST /api/products/search` with `{"price_gt": 10, "status_in": ["A","B"]}`) via `Operation.SEARCH` + `@ExposeField`; unknown keys rejected. | Yes (compile-time, validated) | Partial (Querydsl binding or `/search` query methods) |
 | Security Integration    | Automatically generates security filter chains for each entity endpoint. | Yes                       | No (manual configuration required) |
 | Relationship Handling   | Manages nested and relation fields intelligently in APIs.                | Yes                       | Partial (HAL navigation required) |
 | Debuggability           | Generated code is readable and maintainable Java files.                 | Yes                       | N/A (runtime-generated proxies only) |

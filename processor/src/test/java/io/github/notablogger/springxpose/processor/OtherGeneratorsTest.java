@@ -36,11 +36,11 @@ class OtherGeneratorsTest {
         import jakarta.persistence.*;
 
         @Entity
-        @ExposeEntity(path = "books", relationMode = RelationMode.ALWAYS_IDS, ignoredFields = {"internalNotes"})
+        @ExposeEntity(path = "books", relationMode = RelationMode.ALWAYS_IDS)
         public class Book {
             @Id @GeneratedValue private Long id;
             private String title;
-            private String internalNotes;
+            @ExposeField(hidden = true) private String internalNotes;
             @ManyToOne private Category category;
 
             public Long getId() { return id; }
@@ -86,6 +86,109 @@ class OtherGeneratorsTest {
     );
 
     @Test
+    void hiddenRelation_excludedFromBothDtosAndStillCompiles() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(CATEGORY,
+            JavaFileObjects.forSourceString("com.example.entity.Book",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+
+                @Entity
+                @ExposeEntity(path = "books")
+                public class Book {
+                    @Id @GeneratedValue private Long id;
+                    private String title;
+                    @ManyToOne @ExposeField(hidden = true) private Category category;
+
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String title) { this.title = title; }
+                    public Category getCategory() { return category; }
+                    public void setCategory(Category category) { this.category = category; }
+                }
+                """));
+
+        assertThat(c).succeeded();
+        for (String dto : new String[] {"BookDto", "BookRequestDto"}) {
+            String src = c.generatedSourceFile("com.example.entity.generated." + dto)
+                .orElseThrow().getCharContent(false).toString();
+            assertFalse(src.contains("category"), dto + " must not expose a hidden relation: " + src);
+        }
+    }
+
+    @Test
+    void hiddenField_onMongoDocument() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.document.Note",
+                """
+                package com.example.document;
+                import io.github.notablogger.springxpose.annotation.*;
+                import org.springframework.data.annotation.Id;
+
+                @ExposeDocument(path = "notes")
+                public class Note {
+                    @Id private String id;
+                    private String title;
+                    @ExposeField(hidden = true) private String internalTag;
+
+                    public String getId() { return id; }
+                    public void setId(String id) { this.id = id; }
+                    public String getTitle() { return title; }
+                    public void setTitle(String title) { this.title = title; }
+                    public String getInternalTag() { return internalTag; }
+                    public void setInternalTag(String internalTag) { this.internalTag = internalTag; }
+                }
+                """));
+
+        assertThat(c).succeeded();
+        assertFalse(c.generatedSourceFile("com.example.document.generated.NoteDto")
+            .orElseThrow().getCharContent(false).toString().contains("internalTag"));
+        assertFalse(c.generatedSourceFile("com.example.document.generated.NoteRequestDto")
+            .orElseThrow().getCharContent(false).toString().contains("internalTag"));
+    }
+
+    @Test
+    void dtoGenerators_keepGenericAndArrayFieldTypes() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor()).compile(
+            JavaFileObjects.forSourceString("com.example.entity.Article",
+                """
+                package com.example.entity;
+                import io.github.notablogger.springxpose.annotation.*;
+                import jakarta.persistence.*;
+                import java.util.*;
+
+                @Entity
+                @ExposeEntity(path = "articles")
+                public class Article {
+                    @Id @GeneratedValue private Long id;
+                    @ElementCollection private List<String> tags;
+                    @ElementCollection private Set<Integer> scores;
+                    private byte[] thumbnail;
+
+                    public Long getId() { return id; }
+                    public void setId(Long id) { this.id = id; }
+                    public List<String> getTags() { return tags; }
+                    public void setTags(List<String> tags) { this.tags = tags; }
+                    public Set<Integer> getScores() { return scores; }
+                    public void setScores(Set<Integer> scores) { this.scores = scores; }
+                    public byte[] getThumbnail() { return thumbnail; }
+                    public void setThumbnail(byte[] thumbnail) { this.thumbnail = thumbnail; }
+                }
+                """));
+
+        assertThat(c).succeeded();
+        for (String dto : new String[] {"ArticleDto", "ArticleRequestDto"}) {
+            String src = c.generatedSourceFile("com.example.entity.generated." + dto)
+                .orElseThrow().getCharContent(false).toString();
+            assertTrue(src.contains("private List<String> tags;"), src);
+            assertTrue(src.contains("private Set<Integer> scores;"), src);
+            assertTrue(src.contains("private byte[] thumbnail;"), src);
+        }
+    }
+
+    @Test
     void repositoryGenerator_extendsJpaRepositoryWithEntityAndId() throws Exception {
         Compilation c = compileBook();
 
@@ -106,7 +209,7 @@ class OtherGeneratorsTest {
             .orElseThrow().getCharContent(false).toString();
 
         assertTrue(dto.contains("Long categoryId"), "DTO should expose relation id in ALWAYS_IDS mode");
-        assertFalse(dto.contains("internalNotes"), "DTO should exclude ignored fields");
+        assertFalse(dto.contains("internalNotes"), "DTO should exclude hidden fields");
     }
 
     @Test

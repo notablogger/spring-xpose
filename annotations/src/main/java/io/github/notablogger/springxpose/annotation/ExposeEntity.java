@@ -27,16 +27,11 @@ public @interface ExposeEntity {
 
     String[] writeRoles() default {};
 
-    /**
-     * Entity field names to exclude from both the generated response DTO and request DTO.
-     * The entity itself retains these fields for persistence.
-     */
-    String[] ignoredFields() default {};
 
     /**
-     * When {@code true}, the generated {@code findAll} endpoint accepts Spring Data
-     * {@code Pageable} query parameters ({@code ?page=0&size=20&sort=name,asc}) and
-     * returns a {@code Page<Dto>} instead of a flat {@code List<Dto>}.
+     * When {@code true}, the generated {@code findAll} and {@code search} endpoints accept Spring
+     * Data {@code Pageable} query parameters ({@code ?page=0&size=20&sort=name,asc}) and
+     * return a {@code Page<Dto>} instead of a flat {@code List<Dto>}.
      * <p>
      * Defaults to {@code false} to preserve backward-compatible list responses.
      */

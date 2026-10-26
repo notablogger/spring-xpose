@@ -1,6 +1,6 @@
 # Architecture — spring-xpose
 
-spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes **or `@ExposeDocument` on MongoDB document classes** and writes six `.java` source files per annotated class into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
+spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes **or `@ExposeDocument` on MongoDB document classes** and writes six `.java` source files per annotated class — eight when the class exposes `Operation.SEARCH` — into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
 
 ---
 
@@ -47,6 +47,10 @@ annotations  ←  processor  ←  (user's app at compile time)
 │          ├──▶ DtoGenerator          → ProductDto.java        │
 │          ├──▶ RequestDtoGenerator   → ProductRequestDto.java │
 │          ├──▶ MapperGenerator       → ProductMapper.java     │
+│          ├──▶ SearchRequestGenerator → ProductSearchRequest.java
+│          │      (only with Operation.SEARCH)                 │
+│          ├──▶ SpecificationGenerator → ProductSpec.java      │
+│          │      (only with Operation.SEARCH)                 │
 │          ├──▶ RestControllerGenerator → ProductController.java│
 │          └──▶ SecurityConfigurerGenerator → ProductSecurityConfigurer.java
 │                                                              │
@@ -72,7 +76,6 @@ classDiagram
         +String[] roles
         +String[] readRoles
         +String[] writeRoles
-        +String[] ignoredFields
         +boolean pageable
         +Class customMapper
     }
@@ -83,10 +86,14 @@ classDiagram
         +String[] roles
         +String[] readRoles
         +String[] writeRoles
-        +String[] ignoredFields
         +boolean pageable
         +Class customMapper
         <<always MongoDB>>
+    }
+    class ExposeField {
+        +FilterOperation[] filterOperations
+        +boolean hidden
+        <<field-level>>
     }
     class Operation {
         <<enumeration>>
@@ -130,7 +137,8 @@ classDiagram
         +Set~String~ roles
         +Set~String~ readRoles
         +Set~String~ writeRoles
-        +Set~String~ ignoredFields
+        +Set~String~ hiddenFields
+        +List~FilterFieldModel~ filters
         +String customMapperClassName
         +boolean pageable
         +String versionFieldName
@@ -173,6 +181,14 @@ classDiagram
     class MapperGenerator {
         +generate(EntityModel)
     }
+    class SearchRequestGenerator {
+        +generate(EntityModel)
+        <<only with Operation.SEARCH>>
+    }
+    class SpecificationGenerator {
+        +generate(EntityModel)
+        <<only with Operation.SEARCH>>
+    }
     class RestControllerGenerator {
         +generate(EntityModel)
     }
@@ -184,6 +200,8 @@ classDiagram
     ExposeEntityProcessor --> DtoGenerator
     ExposeEntityProcessor --> RequestDtoGenerator
     ExposeEntityProcessor --> MapperGenerator
+    ExposeEntityProcessor --> SearchRequestGenerator
+    ExposeEntityProcessor --> SpecificationGenerator
     ExposeEntityProcessor --> RestControllerGenerator
     ExposeEntityProcessor --> SecurityConfigurerGenerator
 
@@ -241,6 +259,20 @@ ProductController.findAll()
         │
         ▼
 200 OK  List<ProductDto>
+
+HTTP POST /api/products/search?page=0&size=20  { "price_gt": 10, "categoryId": 3 }
+        │
+        ▼
+ProductController.search(ProductSearchRequest, Pageable)
+        │   (Jackson reads the body — 400 on an unknown key or a bad value)
+        ├── SerializationContext.set(LIST)
+        ├── repository.findAll(ProductSpec.withFilters(request), pageable)
+        │       └── WHERE price > 10 AND category_id = 3
+        ├── page.map(mapper::toDto)
+        └── SerializationContext.clear()
+        │
+        ▼
+200 OK  Page<ProductDto>
 
 HTTP POST /api/products  { "name":"Laptop", "categoryId": 3 }
         │

@@ -46,7 +46,8 @@ public @interface ExposeDocument {
     String path() default "";
 
     /**
-     * HTTP operations to generate. Defaults to all five.
+     * HTTP operations to generate. Defaults to the five CRUD operations;
+     * {@link Operation#SEARCH} must be listed explicitly.
      */
     Operation[] expose() default {
         Operation.FIND_ALL,
@@ -62,22 +63,17 @@ public @interface ExposeDocument {
     /** Roles required for all operations (read and write). */
     String[] roles() default {};
 
-    /** Roles for GET requests — overrides {@code roles} for read operations. */
+    /** Roles for read requests (GET and search) — overrides {@code roles} for read operations. */
     String[] readRoles() default {};
 
     /** Roles for POST / PUT / DELETE — overrides {@code roles} for write operations. */
     String[] writeRoles() default {};
 
-    /**
-     * Document field names to exclude from both the generated response DTO and request DTO.
-     * The document class itself retains these fields for persistence.
-     */
-    String[] ignoredFields() default {};
 
     /**
-     * When {@code true}, the generated {@code findAll} endpoint accepts Spring Data
-     * {@code Pageable} query parameters ({@code ?page=0&size=20&sort=name,asc}) and
-     * returns a {@code Page<Dto>} instead of a flat {@code List<Dto>}.
+     * When {@code true}, the generated {@code findAll} and {@code search} endpoints accept Spring
+     * Data {@code Pageable} query parameters ({@code ?page=0&size=20&sort=name,asc}) and
+     * return a {@code Page<Dto>} instead of a flat {@code List<Dto>}.
      * <p>
      * Defaults to {@code false}.
      */

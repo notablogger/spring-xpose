@@ -13,6 +13,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import tools.jackson.core.JacksonException;
 
 import java.net.URI;
 import java.util.Map;
@@ -23,7 +24,8 @@ import java.util.stream.Collectors;
  *
  * <p>Maps common exception types to consistent RFC 9457 Problem Detail responses:
  * <ul>
- *   <li>{@code 400} — malformed JSON body</li>
+ *   <li>{@code 400} — malformed JSON body, an invalid value, or an unknown search key —
+ *       keyed by the JSON property in {@code errors} when Jackson reports one</li>
  *   <li>{@code 400} — bean validation failures ({@code @NotBlank}, {@code @Positive}, etc.)</li>
  *   <li>{@code 409} — database constraint violation (duplicate key, FK violation on save)</li>
  *   <li>{@code 409} — optimistic locking conflict ({@code @Version} mismatch)</li>
@@ -35,13 +37,28 @@ public class SpringXposeExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(SpringXposeExceptionHandler.class);
 
-    /** Malformed / unreadable JSON body. */
+    /**
+     * Malformed / unreadable JSON body. When Jackson knows which property failed — a value of the
+     * wrong type, an unparseable date, or an unknown key rejected by a generated
+     * {@code SearchRequest} — the response names it: {@code "errors": {"price_gt": "..."}}.
+     */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ProblemDetail> handleUnreadable(HttpMessageNotReadableException ex) {
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         pd.setType(URI.create("urn:springxpose:malformed-body"));
         pd.setTitle("Malformed request body");
-        pd.setDetail("The request body could not be parsed as JSON: " + rootMessage(ex));
+
+        JacksonException failed = jsonErrorWithPath(ex);
+        if (failed != null) {
+            String property = jsonPath(failed);
+            Throwable root = rootCause(ex);
+            // Jackson's own messages carry source locations; its original message is the readable part
+            String message = root instanceof JacksonException je ? je.getOriginalMessage() : rootMessage(ex);
+            pd.setDetail("The request body is invalid at '" + property + "': " + message);
+            pd.setProperty("errors", Map.of(property, message));
+        } else {
+            pd.setDetail("The request body could not be parsed as JSON: " + rootMessage(ex));
+        }
         return ResponseEntity.badRequest().body(pd);
     }
 
@@ -108,9 +125,36 @@ public class SpringXposeExceptionHandler {
     }
 
     private static String rootMessage(Throwable ex) {
+        Throwable cause = rootCause(ex);
+        return cause.getMessage() != null ? cause.getMessage() : ex.getClass().getSimpleName();
+    }
+
+    private static Throwable rootCause(Throwable ex) {
         Throwable cause = ex;
         while (cause.getCause() != null) cause = cause.getCause();
-        return cause.getMessage() != null ? cause.getMessage() : ex.getClass().getSimpleName();
+        return cause;
+    }
+
+    /** The first Jackson exception in the cause chain that knows the failing property, or {@code null}. */
+    private static JacksonException jsonErrorWithPath(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof JacksonException je && !je.getPath().isEmpty()) return je;
+        }
+        return null;
+    }
+
+    /** The failing property as a JSON path: {@code price_gt}, {@code items[2].sku}. */
+    private static String jsonPath(JacksonException ex) {
+        StringBuilder path = new StringBuilder();
+        for (JacksonException.Reference ref : ex.getPath()) {
+            if (ref.getPropertyName() != null) {
+                if (!path.isEmpty()) path.append('.');
+                path.append(ref.getPropertyName());
+            } else if (ref.getIndex() >= 0) {
+                path.append('[').append(ref.getIndex()).append(']');
+            }
+        }
+        return path.toString();
     }
 }
 

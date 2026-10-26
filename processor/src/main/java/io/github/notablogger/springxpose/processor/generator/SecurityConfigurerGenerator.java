@@ -82,6 +82,8 @@ public class SecurityConfigurerGenerator {
         boolean exposeCreate   = model.operations().contains(Operation.CREATE);
         boolean exposeUpdate   = model.operations().contains(Operation.UPDATE);
         boolean exposeDelete   = model.operations().contains(Operation.DELETE);
+        // POST /search is a read: it gets the read roles, not the write roles of POST (create)
+        boolean exposeSearch   = model.searchable();
 
         if (model.authType() == AuthType.NONE) {
             CodeBlock.Builder auth = CodeBlock.builder();
@@ -91,6 +93,9 @@ public class SecurityConfigurerGenerator {
             }
             if (exposeFindById) {
                 auth.add("    .requestMatchers($T.GET, $S).permitAll()\n", httpMethod, basePath + "/**");
+            }
+            if (exposeSearch) {
+                auth.add("    .requestMatchers($T.POST, $S).permitAll()\n", httpMethod, basePath + "/search");
             }
             if (exposeCreate) {
                 auth.add("    .requestMatchers($T.POST, $S).permitAll()\n", httpMethod, basePath);
@@ -132,6 +137,13 @@ public class SecurityConfigurerGenerator {
                 auth.add("    .requestMatchers($T.GET, $S).hasAnyRole($L)\n", httpMethod, basePath + "/**", readRoles);
             } else {
                 auth.add("    .requestMatchers($T.GET, $S).authenticated()\n", httpMethod, basePath + "/**");
+            }
+        }
+        if (exposeSearch) {
+            if (readRoles != null) {
+                auth.add("    .requestMatchers($T.POST, $S).hasAnyRole($L)\n", httpMethod, basePath + "/search", readRoles);
+            } else {
+                auth.add("    .requestMatchers($T.POST, $S).authenticated()\n", httpMethod, basePath + "/search");
             }
         }
 

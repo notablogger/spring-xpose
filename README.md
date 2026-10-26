@@ -30,7 +30,7 @@ spring-xpose eliminates steps 1–5 entirely.
 | Per-entity security | ✅ generated per entity | Partial (supported via Spring Security, but configured manually) | Manual |
 | OpenAPI support | ✅ generated annotations + optional springdoc autoconfig | Partial (typically via springdoc integration) | Manual |
 | Readable generated source | ✅ | ❌ | N/A |
-| Field shaping / exclusion | ✅ (`ignoredFields` + generated DTOs) | Partial (projections / excerpts / export controls, no generated DTOs) | Manual |
+| Field shaping / exclusion | ✅ (`@ExposeField(hidden = true)` + generated DTOs) | Partial (projections / excerpts / export controls, no generated DTOs) | Manual |
 | Role-based read/write split | ✅ (`readRoles` / `writeRoles`) | Partial (method-level security overrides, manual) | Manual |
 
 > **Note:** This comparison is specifically against **Spring Data REST** (repository-to-REST export), not Spring Data as a whole. In the table above, **Partial** means the capability exists with Spring Data REST plus extra Spring Security / springdoc customization, but it is not generated for you as part of the default repository export model.
@@ -184,6 +184,8 @@ ProductController.java         ← @RestController at /api/products, returns Pro
 ProductSecurityConfigurer.java ← SecurityFilterChain scoped to /api/products/**
 ```
 
+Exposing `Operation.SEARCH` adds `ProductSearchRequest.java` (the JSON search body) and `ProductSpec.java` (the query builder).
+
 These are real `.java` files — open them in your IDE, set breakpoints, read them.
 
 ---
@@ -206,10 +208,13 @@ spring-xpose provides two complementary annotations:
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    ignoredFields = {"internalNote"},
     customMapper  = MyOrderMapper.class
 )
-public class Order { ... }
+public class Order {
+    @ExposeField(hidden = true)
+    private String internalNote;    // stored, never returned or accepted by the API
+    ...
+}
 ```
 
 **MongoDB document:**
@@ -230,12 +235,32 @@ public class Note {
 | Attribute | Default | Description |
 |---|---|---|
 | `path` | entity name pluralised | URL segment — `"products"` → `/api/products` |
-| `expose` | all five operations | Which HTTP operations to generate |
+| `expose` | the five CRUD operations | Which HTTP operations to generate; `SEARCH` (`POST /api/<path>/search`) is opt-in |
 | `authType` | `NONE` | `NONE`, `BASIC`, or `OAUTH2` |
 | `readRoles` / `writeRoles` | `{}` | Role-based access split |
-| `ignoredFields` | `{}` | Fields excluded from both response and request DTOs |
 | `customMapper` | `void.class` | Bring your own Spring bean mapper |
 | `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | `@ExposeEntity` only — how related entities appear in the DTO |
+
+**Search** — add `Operation.SEARCH` to `expose` and mark fields with `@ExposeField`:
+```java
+@ExposeEntity(path = "products", expose = {Operation.FIND_ALL, Operation.FIND_BY_ID, Operation.CREATE,
+                                           Operation.UPDATE, Operation.DELETE, Operation.SEARCH})
+public class Product {
+    @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.LIKE})
+    private String name;            // "name": "Widget"   "name_like": "widg"
+
+    @ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LT})
+    private BigDecimal price;       // "price_gt": 10, "price_lt": 100
+}
+```
+```bash
+curl -X POST http://localhost:8080/api/products/search \
+  -H "Content-Type: application/json" \
+  -d '{"name_like":"widg","price_gt":10,"price_lt":100}'
+```
+Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`"status_in": ["A","B"]`), `IS_NULL` (`"deletedAt_is_null": true`). All keys are optional and AND-ed; unknown keys are rejected with `400`. On collection fields (`@ElementCollection List<String> tags`) `IN` / `NOT_IN` mean *has any* / *has none* of the values. Relations filter by id: `"categoryId": 5`, `"suppliers_in": [1, 2]`. Mismatches (e.g. `LIKE` on a number) fail the build. Search is a `POST` because a `GET` cannot carry a body — the read-only, retry-safe `QUERY` method (RFC 10008) is planned once Spring supports it.
+
+→ Operations, value formats, validation rules, why it is a POST, and limitations: **[`docs/tech/annotation-reference.md#search--post-apipathsearch`](docs/tech/annotation-reference.md#search--post-apipathsearch)**
 
 → Full attribute reference, operation table, auth types, `@ExposeDocument` guide, relation modes, request DTO rules, and custom mapper guide: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
 
@@ -267,7 +292,7 @@ All generated controllers are annotated with `@Tag`, `@Operation`, and `@ApiResp
 
 ## Sample Project
 
-→ **[spring-xpose-sample-rest](https://github.com/notablogger/spring-xpose-sample-rest)** — a runnable Spring Boot app demonstrating DTOs, `ignoredFields`, all three auth types, relation modes, validation, and Swagger UI.
+→ **[spring-xpose-sample-rest](https://github.com/notablogger/spring-xpose-sample-rest)** — a runnable Spring Boot app demonstrating DTOs, hidden fields, all three auth types, relation modes, validation, and Swagger UI.
 
 ---
 
@@ -335,10 +360,15 @@ Run tests:
 - [x] MongoDB support via `@ExposeDocument` (MongoDB-native, no JPA terminology)
 - [x] Per-entity security (NONE / BASIC / OAUTH2)
 - [x] Relation-aware DTO serialisation
-- [x] `ignoredFields` — hide entity fields from the API
+- [x] `@ExposeField(hidden = true)` — hide entity fields from the API (replaces the former `ignoredFields`)
 - [x] OpenAPI / Swagger UI with auth scheme
 - [x] Request DTO — separate request/response shapes with validation annotation propagation
 - [x] Custom mapper — plug in your own Spring bean via `customMapper = YourMapper.class`
+- [x] Search — `Operation.SEARCH` (`POST /api/<path>/search`) with `@ExposeField(filterOperations = …)` on fields: `EQ`, `NE`, ranges, `LIKE`, `IN` / `NOT_IN`, `IS_NULL`, collection fields
+- [x] Relation filters by id — `"categoryId": 5`, `"suppliers_in": [1, 2]`
+- [ ] Relation filters by related attributes — `"category_name": "Books"`
+- [ ] OR / grouped search conditions
+- [ ] Search over the HTTP `QUERY` method (RFC 10008), next to `POST /search`
 - [ ] GraphQL — compile-time DataFetcher wiring
 
 ---

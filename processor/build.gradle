@@ -54,6 +54,7 @@ dependencies {
     testImplementation 'org.springframework.data:spring-data-mongodb' // needed for MongoRepository in generated code
     testImplementation project(':starter')
     testImplementation 'io.swagger.core.v3:swagger-annotations:2.2.55'
+    testImplementation 'tools.jackson.core:jackson-databind'   // reads generated SearchRequest bodies in tests
 }
 
 tasks.withType(JavaCompile) {

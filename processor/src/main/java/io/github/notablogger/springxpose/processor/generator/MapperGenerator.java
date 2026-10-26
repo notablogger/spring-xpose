@@ -69,7 +69,7 @@ public class MapperGenerator {
 
         for (RelationFieldModel rel : model.relations()) {
             if ("COLLECTION".equals(rel.relationType())) continue;
-            if (model.ignoredFields().contains(rel.name())) continue;
+            if (model.hiddenFields().contains(rel.name())) continue;
             if (model.relationMode() != RelationMode.ALWAYS_OBJECT) {
                 toDto.addAnnotation(AnnotationSpec.builder(mappingAnnot)
                     .addMember("source", "$S", rel.name() + ".id")
@@ -106,9 +106,9 @@ public class MapperGenerator {
                 .addMember("ignore", "$L", true)
                 .build());
         }
-        // ignoredFields are absent from RequestDto — must be explicitly ignored so MapStruct
+        // Hidden fields are absent from RequestDto — must be explicitly ignored so MapStruct
         // does not warn about unmapped target properties
-        for (String ignored : model.ignoredFields()) {
+        for (String ignored : model.hiddenFields()) {
             toEntity.addAnnotation(AnnotationSpec.builder(mappingAnnot)
                 .addMember("target", "$S", ignored)
                 .addMember("ignore", "$L", true)
@@ -117,7 +117,7 @@ public class MapperGenerator {
         // Relation objects are resolved from IDs by the controller, not by MapStruct
         for (RelationFieldModel rel : model.relations()) {
             if ("COLLECTION".equals(rel.relationType())) continue;
-            if (model.ignoredFields().contains(rel.name())) continue;
+            if (model.hiddenFields().contains(rel.name())) continue;
             toEntity.addAnnotation(AnnotationSpec.builder(mappingAnnot)
                 .addMember("target", "$S", rel.name())
                 .addMember("ignore", "$L", true)
@@ -150,8 +150,8 @@ public class MapperGenerator {
                 .addMember("ignore", "$L", true)
                 .build());
         }
-        // ignoredFields are absent from RequestDto — explicitly ignored to suppress MapStruct warnings
-        for (String ignored : model.ignoredFields()) {
+        // Hidden fields are absent from RequestDto — explicitly ignored to suppress MapStruct warnings
+        for (String ignored : model.hiddenFields()) {
             updateEntity.addAnnotation(AnnotationSpec.builder(mappingAnnot)
                 .addMember("target", "$S", ignored)
                 .addMember("ignore", "$L", true)
@@ -160,7 +160,7 @@ public class MapperGenerator {
         // Relation objects — controller resolves them from relation IDs
         for (RelationFieldModel rel : model.relations()) {
             if ("COLLECTION".equals(rel.relationType())) continue;
-            if (model.ignoredFields().contains(rel.name())) continue;
+            if (model.hiddenFields().contains(rel.name())) continue;
             updateEntity.addAnnotation(AnnotationSpec.builder(mappingAnnot)
                 .addMember("target", "$S", rel.name())
                 .addMember("ignore", "$L", true)
