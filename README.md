@@ -258,9 +258,9 @@ curl -X POST http://localhost:8080/api/products/search \
   -H "Content-Type: application/json" \
   -d '{"name_like":"widg","price_gt":10,"price_lt":100}'
 ```
-Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`"status_in": ["A","B"]`), `IS_NULL` (`"deletedAt_is_null": true`). All keys are optional and AND-ed; unknown keys are rejected with `400`. On collection fields (`@ElementCollection List<String> tags`) `IN` / `NOT_IN` mean *has any* / *has none* of the values. Relations filter by id: `"categoryId": 5`, `"suppliers_in": [1, 2]`. Mismatches (e.g. `LIKE` on a number) fail the build. `GET /api/products` stays an unfiltered list. Search is a `POST` because a `GET` cannot carry a body — the read-only, retry-safe `QUERY` method (RFC 10008) is planned once Spring supports it.
+Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`"status_in": ["A","B"]`), `IS_NULL` (`"deletedAt_is_null": true`). All keys are optional and AND-ed; unknown keys are rejected with `400`. On collection fields (`@ElementCollection List<String> tags`) `IN` / `NOT_IN` mean *has any* / *has none* of the values. Relations filter by id: `"categoryId": 5`, `"suppliers_in": [1, 2]`. Mismatches (e.g. `LIKE` on a number) fail the build. Search is a `POST` because a `GET` cannot carry a body — the read-only, retry-safe `QUERY` method (RFC 10008) is planned once Spring supports it.
 
-→ Operations, value formats, validation rules, why it is a POST, and limitations: **[`docs/tech/annotation-reference.md#exposefield--search-filters`](docs/tech/annotation-reference.md#exposefield--search-filters)**
+→ Operations, value formats, validation rules, why it is a POST, and limitations: **[`docs/tech/annotation-reference.md#search--post-apipathsearch`](docs/tech/annotation-reference.md#search--post-apipathsearch)**
 
 → Full attribute reference, operation table, auth types, `@ExposeDocument` guide, relation modes, request DTO rules, and custom mapper guide: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
 

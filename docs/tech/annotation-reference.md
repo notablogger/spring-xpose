@@ -6,7 +6,7 @@ spring-xpose provides **two complementary class-level annotations** for compile-
 |---|---|---|---|
 | `@ExposeEntity` | JPA entity class (`@Entity`) | always JPA | SQL databases — Postgres, MySQL, H2, … |
 | `@ExposeDocument` | MongoDB document class (`@Document`) | always MongoDB | MongoDB document collections |
-| `@ExposeField` | field of either | both | hiding a field from the API, filters for the search endpoint — see [hidden](#exposefieldhidden--true--hiding-fields-from-the-api), [search filters](#exposefield--search-filters) |
+| `@ExposeField` | field of either | both | hiding a field from the API, filters for the search endpoint — see [hidden](#exposefieldhidden--true--hiding-fields-from-the-api), [search filters](#search--post-apipathsearch) |
 
 The annotation you choose determines the persistence backend — there is no `store` parameter to set.
 `@ExposeDocument` additionally omits the JPA-specific `relationMode` attribute (MongoDB documents do not have JPA relations).
@@ -109,7 +109,7 @@ public class Note {
 | `DELETE` | `DELETE` | `/api/{path}/{id}` | `204 No Content` / `404 Not Found` | ✅ |
 | `SEARCH` | `POST` | `/api/{path}/search` | `200 OK` — records matching the JSON body (`EntitySearchRequest`), `List` or `Page` like `FIND_ALL`; `400` for an unknown key or bad value. A read: secured with `readRoles` | ❌ opt-in |
 
-Filtering lives only on `SEARCH`: `FIND_ALL` takes no filter parameters. See [Search filters](#exposefield--search-filters).
+To filter, expose `SEARCH` and declare filters on fields — see [Search filters](#search--post-apipathsearch).
 
 ---
 
@@ -177,9 +177,9 @@ public class User { @ExposeField(hidden = true) private String passwordHash; ...
 
 ---
 
-## `@ExposeField` — Search filters
+## Search — `POST /api/<path>/search`
 
-`@ExposeField` is a **field-level** annotation. Its `filterOperations` attribute lists the filter operations a field accepts as optional keys in the JSON body of the generated `POST /api/<path>/search` endpoint. The endpoint exists only when the class lists `Operation.SEARCH` in `expose`. It works on both `@ExposeEntity` (JPA) and `@ExposeDocument` (MongoDB) classes.
+List `Operation.SEARCH` in `expose` and spring-xpose generates **`POST /api/<path>/search`**: a read-only endpoint that returns the records matching a JSON body of filters. Which filters a field accepts is declared on the field with `@ExposeField(filterOperations = …)`. It works on both `@ExposeEntity` (JPA) and `@ExposeDocument` (MongoDB) classes.
 
 | Attribute | Type | Default | Description |
 |---|---|---|---|
@@ -222,10 +222,9 @@ Content-Type: application/json
 ```
 
 - **Key names:** `EQ` uses the field name; every other operation uses `<field>_<operation>` in lower case (`price_gt`, `status_not_in`, `deletedAt_is_null`).
-- **All keys are optional.** A key that is not sent, or sent as `null`, adds no condition. `{}` — or no body at all — returns every record, like `GET /api/<path>`.
+- **All keys are optional.** A key that is not sent, or sent as `null`, adds no condition. `{}` — or no body at all — returns every record.
 - **Keys are AND-ed.** There is no OR.
-- **Paging and sorting** (`pageable = true`) stay in the query string — `page`, `size`, `sort` — exactly as on `GET`; the response is a `Page`. Without `pageable` the response is a list.
-- **`GET /api/<path>` has no filters.** It always returns every record (paged when `pageable = true`).
+- **Paging and sorting** (`pageable = true`) are query parameters — `page`, `size`, `sort` — as on `GET /api/<path>`; the response is a `Page`. Without `pageable` the response is a list.
 - **It is a read.** The endpoint changes nothing, is safe to retry, and is secured with `readRoles` (or `roles`), not `writeRoles`. See [why it is a POST](#why-search-is-a-post).
 
 ### Operations
@@ -373,7 +372,6 @@ The trade-offs, compared with a `GET`:
 - **`EQ` / `IN` on text is case-sensitive.**
 - **Collections:** only `IN`, `NOT_IN` and `IS_NULL`; no "has all of". JPA needs `@ElementCollection`.
 - **Very long `IN` lists** are passed to the database as-is; some databases limit the number of bind parameters per statement.
-- **Filters apply to `search` only** — not to `findAll`, `findById`, update or delete.
 - **`POST`, not `GET`** — see [Why search is a POST](#why-search-is-a-post) for what that means for caching and links.
 - **MongoDB field names** in queries are the Java property names; Spring Data maps them to `@Field` names as usual.
 
@@ -424,8 +422,9 @@ Use a path outside `/api/<path>/**`: the generated security chain for `/api/prod
 - **OpenAPI:** Swagger UI shows the search body as one JSON schema — every key with its type (`status_in` as an array, `deletedAt_is_null` as a boolean, dates with `format: date`, …) and a description — and one example, `example`, that lists **every search key with a placeholder of its type** (`"string"`, `0`, `true`, the first enum constant, `"2026-01-01"` for dates, one-element arrays for `_in` / `_not_in`, `true` for `_is_null`). Every placeholder has the right type, so the example can be sent as is, but all keys are AND-ed, so it rarely matches a record: remove the keys you don't need (`{}` returns everything). `page` / `size` / `sort` appear as optional query parameters.
 
   ```json
-  { "name": "string", "name_like": "string", "price_gte": 0, "price_lte": 0,
-    "status_in": ["ACTIVE"], "deletedAt_is_null": true, "categoryId": 0, "tags_in": ["string"] }
+  { "name": "string", "name_ne": "string", "name_like": "string",
+    "price_gt": 0, "price_gte": 0, "price_lt": 0, "price_lte": 0,
+    "status_in": ["ACTIVE"], "status_not_in": ["ACTIVE"], "deletedAt_is_null": true }
   ```
 
 Details and generated source examples: [`generated-artifacts.md`](generated-artifacts.md#7-entitysearchrequest).
