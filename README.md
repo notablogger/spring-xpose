@@ -54,9 +54,9 @@ spring-xpose follows the same pattern as **Lombok** and **MapStruct** — a few 
 
 ```groovy
 dependencies {
-    implementation 'io.github.notablogger:spring-xpose-starter:3.0.1'
-    annotationProcessor 'io.github.notablogger:spring-xpose-processor:3.0.1'
-    compileOnly 'io.github.notablogger:spring-xpose-annotations:3.0.1'
+    implementation 'io.github.notablogger:spring-xpose-starter:4.0.0'
+    annotationProcessor 'io.github.notablogger:spring-xpose-processor:4.0.0'
+    compileOnly 'io.github.notablogger:spring-xpose-annotations:4.0.0'
     annotationProcessor 'jakarta.persistence:jakarta.persistence-api:3.1.0'
     annotationProcessor 'org.mapstruct:mapstruct-processor:1.5.5.Final'
 }
@@ -66,9 +66,9 @@ dependencies {
 
 ```kotlin
 dependencies {
-    implementation("io.github.notablogger:spring-xpose-starter:3.0.1")
-    annotationProcessor("io.github.notablogger:spring-xpose-processor:3.0.1")
-    compileOnly("io.github.notablogger:spring-xpose-annotations:3.0.1")
+    implementation("io.github.notablogger:spring-xpose-starter:4.0.0")
+    annotationProcessor("io.github.notablogger:spring-xpose-processor:4.0.0")
+    compileOnly("io.github.notablogger:spring-xpose-annotations:4.0.0")
     annotationProcessor("jakarta.persistence:jakarta.persistence-api:3.1.0")
     annotationProcessor("org.mapstruct:mapstruct-processor:1.5.5.Final")
 }
@@ -81,12 +81,12 @@ dependencies {
     <dependency>
         <groupId>io.github.notablogger</groupId>
         <artifactId>spring-xpose-starter</artifactId>
-        <version>3.0.1</version>
+        <version>4.0.0</version>
     </dependency>
     <dependency>
         <groupId>io.github.notablogger</groupId>
         <artifactId>spring-xpose-annotations</artifactId>
-        <version>3.0.1</version>
+        <version>4.0.0</version>
         <scope>provided</scope>
     </dependency>
 </dependencies>
@@ -101,7 +101,7 @@ dependencies {
                     <path>
                         <groupId>io.github.notablogger</groupId>
                         <artifactId>spring-xpose-processor</artifactId>
-                        <version>3.0.1</version>
+                        <version>4.0.0</version>
                     </path>
                     <path>
                         <groupId>jakarta.persistence</groupId>

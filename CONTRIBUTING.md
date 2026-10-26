@@ -226,11 +226,13 @@ Commits that don't follow this format will be flagged in the PR build.
 
 Releases are **maintainer-only**. The flow is:
 
-1. Create a `release/x.y.z` branch from `main`
-2. Bump the version in `build.gradle` if needed
-3. Merge to `main` via PR
-4. Push a `vx.y.z` tag — the `Publish to Maven Central` workflow fires automatically
-5. GitHub Release is created with the JARs attached
+1. Open a PR to `main` that bumps the version: the default in `build.gradle` and the install snippets in `README.md`
+2. Merge it once the PR checks pass
+3. On GitHub, go to **Releases → Draft a new release**: create the tag `vx.y.z` on `main`, title it `vx.y.z`, add the release notes and click **Publish release**
+4. Publishing the release triggers the `Publish to Maven Central` workflow (`.github/workflows/release.yml`). It takes the version from the tag (`v4.0.0` → `4.0.0`), signs and publishes `spring-xpose-annotations`, `spring-xpose-processor` and `spring-xpose-starter` to Maven Central, and attaches the three JARs to the release
+5. Check the workflow run is green; the version shows up on Maven Central once Central has processed it, usually within minutes
+
+Pushing a tag on its own does not publish anything — only a published GitHub Release does.
 
 Contributors do not need to worry about this.
 
