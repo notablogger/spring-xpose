@@ -140,6 +140,7 @@ public record EntityModel(
         if (!filtersValid || !checkFilterNames(element, filters, env)) return null;
 
         Set<Operation> operations  = new LinkedHashSet<>(Arrays.asList(annotation.expose()));
+        warnSearchMismatch(element, "@ExposeEntity", operations, filters, env);
         Set<String> roles          = new LinkedHashSet<>(Arrays.asList(annotation.roles()));
         Set<String> readRoles      = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles     = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
@@ -210,6 +211,7 @@ public record EntityModel(
         if (!filtersValid || !checkFilterNames(element, filters, env)) return null;
 
         Set<Operation> operations = new LinkedHashSet<>(Arrays.asList(annotation.expose()));
+        warnSearchMismatch(element, "@ExposeDocument", operations, filters, env);
         Set<String> roles         = new LinkedHashSet<>(Arrays.asList(annotation.roles()));
         Set<String> readRoles     = new LinkedHashSet<>(Arrays.asList(annotation.readRoles()));
         Set<String> writeRoles    = new LinkedHashSet<>(Arrays.asList(annotation.writeRoles()));
@@ -316,8 +318,8 @@ public record EntityModel(
 
     /**
      * Relation filters compare the related entity's id. To-one ({@code @ManyToOne}, owning {@code @OneToOne}):
-     * {@code ?categoryId=5} with EQ, NE, IN, NOT_IN, IS_NULL. To-many ({@code @OneToMany}, {@code @ManyToMany}):
-     * {@code ?tags_in=1,2} with IN (has any of), NOT_IN (has none of), IS_NULL (empty).
+     * {@code {"categoryId": 5}} with EQ, NE, IN, NOT_IN, IS_NULL. To-many ({@code @OneToMany}, {@code @ManyToMany}):
+     * {@code {"tags_in": [1, 2]}} with IN (has any of), NOT_IN (has none of), IS_NULL (empty).
      */
     private static boolean collectRelationFilter(VariableElement field, String fieldName, boolean single,
                                                  Set<FilterOperation> operations,
@@ -411,8 +413,30 @@ public record EntityModel(
     }
 
     /**
-     * Reports a compile error when two filter operations map to the same query parameter or
-     * {@code FilterParams} property — e.g. a field {@code priceGt} next to {@code price} with GT.
+     * Warns when filters and {@link Operation#SEARCH} don't go together: filters without SEARCH
+     * are never used, and SEARCH without filters returns every record.
+     */
+    private static void warnSearchMismatch(TypeElement element, String annotationName,
+                                           Set<Operation> operations, List<FilterFieldModel> filters,
+                                           ProcessingEnvironment env) {
+        boolean search = operations.contains(Operation.SEARCH);
+        if (!search && !filters.isEmpty()) {
+            env.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                "spring-xpose: " + element.getSimpleName() + " declares @ExposeField filterOperations but "
+                + annotationName + " does not expose Operation.SEARCH — the filters are not used. "
+                + "Add SEARCH to expose, or remove the filterOperations.",
+                element);
+        } else if (search && filters.isEmpty()) {
+            env.getMessager().printMessage(Diagnostic.Kind.WARNING,
+                "spring-xpose: " + element.getSimpleName() + " exposes Operation.SEARCH but no field declares "
+                + "@ExposeField(filterOperations = ...) — the search endpoint returns every record.",
+                element);
+        }
+    }
+
+    /**
+     * Reports a compile error when two filter operations map to the same search key or
+     * {@code SearchRequest} property — e.g. a field {@code priceGt} next to {@code price} with GT.
      */
     private static boolean checkFilterNames(TypeElement element, List<FilterFieldModel> filters,
                                             ProcessingEnvironment env) {
@@ -422,13 +446,13 @@ public record EntityModel(
         for (FilterFieldModel filter : filters) {
             for (FilterOperation op : filter.operations()) {
                 String owner = filter.name() + " " + op;
-                String clash = params.putIfAbsent(filter.paramName(op), owner);
+                String clash = params.putIfAbsent(filter.keyName(op), owner);
                 if (clash == null) clash = properties.putIfAbsent(filter.propertyName(op), owner);
                 if (clash != null) {
                     env.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         "@ExposeField: filter '" + owner + "' on " + element.getSimpleName()
-                        + " clashes with '" + clash + "' — both map to query parameter '"
-                        + filter.paramName(op) + "' / property '" + filter.propertyName(op) + "'",
+                        + " clashes with '" + clash + "' — both map to search key '"
+                        + filter.keyName(op) + "' / property '" + filter.propertyName(op) + "'",
                         element);
                     valid = false;
                 }
@@ -486,5 +510,13 @@ public record EntityModel(
     /** True when at least one field declares {@code @ExposeField} operations. */
     public boolean hasFilters() {
         return filters != null && !filters.isEmpty();
+    }
+
+    /**
+     * True when {@link Operation#SEARCH} is exposed: the {@code SearchRequest}, {@code Spec} and
+     * {@code POST /search} endpoint are generated (with no filters the search matches everything).
+     */
+    public boolean searchable() {
+        return operations.contains(Operation.SEARCH);
     }
 }

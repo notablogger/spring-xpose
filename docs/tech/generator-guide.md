@@ -15,7 +15,7 @@ This document explains how the annotation processor pipeline works and how to ad
 public class ExposeEntityProcessor extends AbstractProcessor { ... }
 ```
 
-The processor runs in a **single round**: it iterates every `@ExposeEntity`-annotated `TypeElement`, builds an `EntityModel` for each, and fires all eight generators (`FilterParamsGenerator` and `SpecificationGenerator` write nothing unless the class has `@ExposeField` filters). If a generator fails it emits a compile error on the entity class (not a silent crash).
+The processor runs in a **single round**: it iterates every `@ExposeEntity`-annotated `TypeElement`, builds an `EntityModel` for each, and fires all eight generators (`SearchRequestGenerator` and `SpecificationGenerator` write nothing unless the class exposes `Operation.SEARCH`). If a generator fails it emits a compile error on the entity class (not a silent crash).
 
 ---
 
@@ -36,7 +36,7 @@ Every generator receives an `EntityModel` record, not the raw `TypeElement`. Thi
 | Related entity type | `DeclaredType.getTypeArguments().get(0)` for collections, `DeclaredType.toString()` for single |
 | Jakarta Validation annotations | `AnnotationMirror` filter on `jakarta.validation.*` prefix |
 | Field types | `field.asType()` — stored as a `TypeMirror` so generators emit generic and array types (`List<String>`, `byte[]`) exactly |
-| `@ExposeField` filters | `field.getAnnotation(ExposeField.class).filterOperations()` → `FilterFieldModel` (attribute name, parameter base, type, element type for collections, related `@Id` name for relations, operations). Relation filters look up the related entity's `@Id` (including `@MappedSuperclass`) for the parameter type. Each operation is validated against the field type here; a mismatch is a compile error on the field and `parse()` returns `null` |
+| `@ExposeField` filters | `field.getAnnotation(ExposeField.class).filterOperations()` → `FilterFieldModel` (attribute name, search key base, type, element type for collections, related `@Id` name for relations, operations). Relation filters look up the related entity's `@Id` (including `@MappedSuperclass`) for the key type. Each operation is validated against the field type here; a mismatch is a compile error on the field and `parse()` returns `null`. Filters without `Operation.SEARCH`, or `SEARCH` without filters, is a warning |
 | Base path | `annotation.path()` or `EntityNameUtils.toBasePath(simpleName)` |
 
 If no `@Id` field is found, `parse()` emits a compiler error and returns `null`. `ExposeEntityProcessor` skips null models and continues with the next entity.
@@ -107,15 +107,16 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
   - `updateEntity(RequestDto, @MappingTarget Entity) → void` — same ignores; used by PUT to overlay only request fields onto the loaded entity
 - If `customMapper` is set, omits `@Mapper(componentModel = "spring")` so MapStruct skips auto-generation; the interface is still generated as a contract
 
-### `FilterParamsGenerator`
-- Only when the model has `@ExposeField` filters
-- Generates `<Entity>FilterParams` — a `final` class with one property per (field, operation), bound through its constructor
-- Suffixed query parameters get `@BindParam("price_gt")` on the constructor parameter (Spring MVC binding) and `@Parameter(name = "price_gt")` on the field (springdoc); `EQ` uses the field name and needs neither
+### `SearchRequestGenerator`
+- Only when the model exposes `Operation.SEARCH` (`EntityModel.searchable()`)
+- Generates `<Entity>SearchRequest` — a `final` class, the JSON body of `POST /search`, with one property per (field, operation)
+- Each property gets `@JsonProperty("price_gt")` (Jackson reads the key; springdoc documents it) and `@Schema(description = ...)`; `EQ` uses the field name
+- A `@JsonAnySetter` method throws for any key without a property, listing the allowed keys — unknown keys are rejected even when the application ignores unknown JSON properties
 - Property types: boxed field type; `List<T>` for `IN` / `NOT_IN` (element type for collections); `Boolean` for `IS_NULL`
 
 ### `SpecificationGenerator`
-- Only when the model has `@ExposeField` filters
-- Generates `<Entity>Spec.withFilters(FilterParams)`: a JPA `Specification` (`CriteriaBuilder`) or a MongoDB `Query` (`Criteria`); one condition per non-null property, AND-ed
+- Only when the model exposes `Operation.SEARCH`
+- Generates `<Entity>Spec.withFilters(SearchRequest)`: a JPA `Specification` (`CriteriaBuilder`) or a MongoDB `Query` (`Criteria`); one condition per non-null property, AND-ed
 - Adds a `likePattern` helper when `LIKE` is used and a `<field>HasAny` EXISTS-subquery helper per JPA collection or to-many relation with `IN` / `NOT_IN`
 - To-one relation filters compare `root.get("<field>").get("<relatedId>")`
 - `RepositoryGenerator` adds `JpaSpecificationExecutor` and `RestControllerGenerator` injects `MongoTemplate` (MongoDB) so the controller can run it
@@ -123,8 +124,9 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
 ### `RestControllerGenerator`
 - Generates `<Entity>Controller` — a `@RestController` at `/api/<basePath>`
 - Conditionally generates only the methods listed in `expose`
-- `findAll` returns `List<Dto>` by default; `Page<Dto>` when `pageable = true`
-- With `@ExposeField` filters, `findAll` also takes `@ModelAttribute <Entity>FilterParams` (plus `@ParameterObject` when springdoc's annotation is on the processing classpath) and queries through `<Entity>Spec`
+- `findAll` returns every record: `List<Dto>` by default; `Page<Dto>` when `pageable = true`
+- With `Operation.SEARCH`, `search` is `@PostMapping("/search")` taking `@RequestBody(required = false) <Entity>SearchRequest` (a missing body is `{}`) and querying through `<Entity>Spec`; same `List` / `Page` return as `findAll`. Its OpenAPI request body has a `{}` example
+- `Pageable` parameters get `@ParameterObject` when springdoc's annotation is on the processing classpath
 - `create` / `update` / `delete` are `@Transactional`
 - `update` uses load-then-merge: fetches the entity first, calls `mapper.updateEntity()`, then saves
 - Relation IDs are resolved via `EntityManager.getReference()` (proxy, no SELECT)
@@ -136,7 +138,7 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
 - Uses `securityMatcher` to scope the chain to `/api/<basePath>/**`
 - `@Order` value is deterministically derived from `entity.hashCode()` (range 100–999)
 - Builds a single `authorizeHttpRequests` block:
-  - `readRoles` (or `roles`) applied to GET matchers
+  - `readRoles` (or `roles`) applied to GET matchers and to `POST /api/<basePath>/search`
   - `writeRoles` (or `roles`) applied to POST / PUT / DELETE matchers
   - Fallback: `authenticated()` when no roles specified
   - `anyRequest().denyAll()` — fail-closed

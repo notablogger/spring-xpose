@@ -4,7 +4,7 @@ import com.google.auto.service.AutoService;
 import io.github.notablogger.springxpose.annotation.ExposeDocument;
 import io.github.notablogger.springxpose.annotation.ExposeEntity;
 import io.github.notablogger.springxpose.processor.generator.DtoGenerator;
-import io.github.notablogger.springxpose.processor.generator.FilterParamsGenerator;
+import io.github.notablogger.springxpose.processor.generator.SearchRequestGenerator;
 import io.github.notablogger.springxpose.processor.generator.MapperGenerator;
 import io.github.notablogger.springxpose.processor.generator.RequestDtoGenerator;
 import io.github.notablogger.springxpose.processor.generator.RestControllerGenerator;
@@ -55,7 +55,7 @@ public class ExposeEntityProcessor extends AbstractProcessor {
             try { new MapperGenerator(processingEnv).generate(model); }
             catch (Exception e) { error(entityClass, "mapper", e); }
 
-            try { new FilterParamsGenerator(processingEnv).generate(model); }
+            try { new SearchRequestGenerator(processingEnv).generate(model); }
             catch (Exception e) { error(entityClass, "filter params", e); }
 
             try { new SpecificationGenerator(processingEnv).generate(model); }

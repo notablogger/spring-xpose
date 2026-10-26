@@ -3,6 +3,8 @@ package io.github.notablogger.springxpose.processor;
 import com.google.testing.compile.Compilation;
 import com.google.testing.compile.JavaFileObjects;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 import javax.tools.JavaFileObject;
 import java.io.IOException;
@@ -11,14 +13,16 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static com.google.testing.compile.CompilationSubject.assertThat;
 import static com.google.testing.compile.Compiler.javac;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Compile-tests for {@code @ExposeField} filters: FilterParams, Spec, repository and controller output. */
+/** Compile-tests for {@code @ExposeField} filters on {@code Operation.SEARCH}: SearchRequest, Spec, repository, controller and security output. */
 class FilterGeneratorTest {
 
     private static final JavaFileObject CATEGORY = JavaFileObjects.forSourceString(
@@ -69,7 +73,7 @@ class FilterGeneratorTest {
         import io.github.notablogger.springxpose.annotation.*;
         import org.springframework.data.annotation.Id;
 
-        @ExposeDocument(path = "notes")
+        @ExposeDocument(path = "notes", expose = {Operation.FIND_ALL, Operation.SEARCH})
         public class Note {
             @Id private String id;
 
@@ -95,16 +99,14 @@ class FilterGeneratorTest {
         """
     );
 
-    /** Stand-in for springdoc's annotation, to exercise the "springdoc on the classpath" branch. */
-    private static final JavaFileObject SPRINGDOC_PARAMETER_OBJECT = JavaFileObjects.forSourceString(
-        "org.springdoc.core.annotations.ParameterObject",
-        """
-        package org.springdoc.core.annotations;
-        public @interface ParameterObject {}
-        """
-    );
-
+    /** A Product entity exposing the CRUD operations and SEARCH, with the given fields. */
     private static JavaFileObject product(String fields) {
+        return product("""
+            path = "products", expose = {Operation.FIND_ALL, Operation.FIND_BY_ID, Operation.CREATE,
+                                         Operation.UPDATE, Operation.DELETE, Operation.SEARCH}""", fields);
+    }
+
+    private static JavaFileObject product(String exposeEntity, String fields) {
         return JavaFileObjects.forSourceString("com.example.entity.Product",
             """
             package com.example.entity;
@@ -113,7 +115,8 @@ class FilterGeneratorTest {
             import jakarta.validation.constraints.NotBlank;
 
             @Entity
-            @ExposeEntity(path = "products")
+            @ExposeEntity(""" + exposeEntity + """
+            )
             public class Product {
                 @Id @GeneratedValue private Long id;
                 public Long getId() { return id; }
@@ -132,20 +135,27 @@ class FilterGeneratorTest {
         return c.generatedSourceFile(className).orElseThrow().getCharContent(false).toString();
     }
 
-    // ── FilterParams ──────────────────────────────────────────────────────────
+    /** Asserts the SearchRequest maps JSON key {@code key} to the field {@code declaration}. */
+    private static void assertKey(String src, String key, String declaration) {
+        assertTrue(Pattern.compile("@JsonProperty\\(\"" + Pattern.quote(key) + "\"\\)\\s+@Schema\\(\\s*description = \"[^\"]*\"\\s*\\)\\s+private "
+                + Pattern.quote(declaration) + ";").matcher(src).find(),
+            "expected key " + key + " → " + declaration + " in:\n" + src);
+    }
+
+    // ── SearchRequest ─────────────────────────────────────────────────────────
 
     @Test
-    void filterParamsHasOnePropertyPerOperation() throws Exception {
+    void searchRequestHasOnePropertyPerOperation() throws Exception {
         Compilation c = compile(PRODUCT);
 
         assertThat(c).succeeded();
-        String src = source(c, "com.example.entity.generated.ProductFilterParams");
+        String src = source(c, "com.example.entity.generated.ProductSearchRequest");
         for (String getter : new String[] {
                 "getName()", "getNameNe()", "getNameLike()",
                 "getPrice()", "getPriceGt()", "getPriceGte()", "getPriceLt()", "getPriceLte()",
                 "getStockGt()", "getStockLt()", "getStatus()", "getStatusIn()", "getStatusNotIn()",
                 "getDeletedAtIsNull()"}) {
-            assertTrue(src.contains(getter), "FilterParams must have " + getter);
+            assertTrue(src.contains(getter), "SearchRequest must have " + getter);
         }
         assertFalse(src.contains("getSku"), "@ExposeField without operations must not be filterable");
         assertFalse(src.contains("getDescription"), "fields without @ExposeField must not be filterable");
@@ -153,18 +163,16 @@ class FilterGeneratorTest {
     }
 
     @Test
-    void suffixedParamsCarryBindParamAndOpenApiName() throws Exception {
+    void suffixedKeysCarryJsonPropertyAndOpenApiDescription() throws Exception {
         Compilation c = compile(PRODUCT);
 
         assertThat(c).succeeded();
-        String src = source(c, "com.example.entity.generated.ProductFilterParams");
-        // Spring MVC binds ?price_gt= to the priceGt constructor parameter ...
-        assertTrue(src.contains("@BindParam(\"price_gt\") BigDecimal priceGt"), src);
-        assertTrue(src.contains("@BindParam(\"name_like\") String nameLike"), src);
-        // ... and springdoc documents it as price_gt, not priceGt
-        assertTrue(src.contains("@Parameter(\n      name = \"price_gt\",\n      description = \"price greater than\"\n  )"), src);
-        // EQ uses the plain field name — no @BindParam needed
-        assertFalse(src.contains("@BindParam(\"price\")"), src);
+        String src = source(c, "com.example.entity.generated.ProductSearchRequest");
+        // Jackson reads "price_gt" into priceGt, and springdoc documents the key, not the Java name
+        assertKey(src, "price_gt", "BigDecimal priceGt");
+        assertKey(src, "name_like", "String nameLike");
+        assertKey(src, "price", "BigDecimal price");
+        assertTrue(src.contains("description = \"price greater than\""), src);
     }
 
     @Test
@@ -172,8 +180,8 @@ class FilterGeneratorTest {
         Compilation c = compile(PRODUCT);
 
         assertThat(c).succeeded();
-        String src = source(c, "com.example.entity.generated.ProductFilterParams");
-        assertTrue(src.contains("Integer stockGt"), "int stock must become Integer in FilterParams");
+        String src = source(c, "com.example.entity.generated.ProductSearchRequest");
+        assertKey(src, "stock_gt", "Integer stockGt");
     }
 
     @Test
@@ -181,10 +189,10 @@ class FilterGeneratorTest {
         Compilation c = compile(PRODUCT);
 
         assertThat(c).succeeded();
-        String src = source(c, "com.example.entity.generated.ProductFilterParams");
-        assertTrue(src.contains("@BindParam(\"status_in\") List<Product.Status> statusIn"), src);
-        assertTrue(src.contains("@BindParam(\"status_not_in\") List<Product.Status> statusNotIn"), src);
-        assertTrue(src.contains("@BindParam(\"deletedAt_is_null\") Boolean deletedAtIsNull"), src);
+        String src = source(c, "com.example.entity.generated.ProductSearchRequest");
+        assertKey(src, "status_in", "List<Product.Status> statusIn");
+        assertKey(src, "status_not_in", "List<Product.Status> statusNotIn");
+        assertKey(src, "deletedAt_is_null", "Boolean deletedAtIsNull");
     }
 
     // ── JPA Spec ──────────────────────────────────────────────────────────────
@@ -277,16 +285,16 @@ class FilterGeneratorTest {
             """);
 
     @Test
-    void collectionInAndNotInBindTheElementType() throws Exception {
+    void collectionInAndNotInTakeTheElementType() throws Exception {
         Compilation c = compile(PRODUCT_WITH_TAGS);
 
         assertThat(c).succeeded();
-        String src = source(c, "com.example.entity.generated.ProductFilterParams");
-        assertTrue(src.contains("@BindParam(\"tags_in\") List<String> tagsIn"), src);
-        assertTrue(src.contains("@BindParam(\"tags_not_in\") List<String> tagsNotIn"), src);
-        assertTrue(src.contains("@BindParam(\"tags_is_null\") Boolean tagsIsNull"), src);
-        assertTrue(src.contains("@BindParam(\"codes_in\") List<Integer> codesIn"), src);
-        assertTrue(src.contains("tags has any of (comma-separated)"), src);
+        String src = source(c, "com.example.entity.generated.ProductSearchRequest");
+        assertKey(src, "tags_in", "List<String> tagsIn");
+        assertKey(src, "tags_not_in", "List<String> tagsNotIn");
+        assertKey(src, "tags_is_null", "Boolean tagsIsNull");
+        assertKey(src, "codes_in", "List<Integer> codesIn");
+        assertTrue(src.contains("tags has any of\""), src);
     }
 
     @Test
@@ -312,8 +320,7 @@ class FilterGeneratorTest {
         assertTrue(spec.contains("Criteria.where(\"labels\").in(f.getLabelsIn())"), spec);
         assertTrue(spec.contains("Criteria.where(\"labels\").nin(f.getLabelsNotIn())"), spec);
         assertTrue(spec.contains("Criteria.where(\"labels.0\").exists(!f.getLabelsIsNull())"), spec);
-        assertTrue(source(c, "com.example.document.generated.NoteFilterParams")
-            .contains("@BindParam(\"labels_in\") List<String> labelsIn"));
+        assertKey(source(c, "com.example.document.generated.NoteSearchRequest"), "labels_in", "List<String> labelsIn");
     }
 
     @Test
@@ -366,41 +373,155 @@ class FilterGeneratorTest {
         assertThat(c).hadErrorCount(1);
     }
 
-    // ── Repository & controller wiring ────────────────────────────────────────
+    // ── Repository, controller & security wiring ──────────────────────────────
+
+    /** Same filters as {@link #PRODUCT}'s name field, but SEARCH is not exposed. */
+    private static final JavaFileObject PRODUCT_WITHOUT_SEARCH = product("path = \"products\"", """
+            @ExposeField(filterOperations = FilterOperation.EQ)
+            private String name;
+            """);
 
     @Test
-    void jpaRepositoryExtendsSpecificationExecutorOnlyWithFilters() throws Exception {
-        Compilation withFilters = compile(PRODUCT);
-        assertThat(withFilters).succeeded();
-        assertTrue(source(withFilters, "com.example.entity.generated.ProductRepository")
+    void jpaRepositoryExtendsSpecificationExecutorOnlyWithSearch() throws Exception {
+        Compilation withSearch = compile(PRODUCT);
+        assertThat(withSearch).succeeded();
+        assertTrue(source(withSearch, "com.example.entity.generated.ProductRepository")
             .contains("JpaSpecificationExecutor<Product>"));
 
-        Compilation withoutFilters = compile(product("private String name;\n"));
-        assertThat(withoutFilters).succeeded();
-        assertFalse(source(withoutFilters, "com.example.entity.generated.ProductRepository")
+        Compilation withoutSearch = compile(PRODUCT_WITHOUT_SEARCH);
+        assertThat(withoutSearch).succeeded();
+        assertFalse(source(withoutSearch, "com.example.entity.generated.ProductRepository")
             .contains("JpaSpecificationExecutor"));
-        assertTrue(withoutFilters.generatedSourceFile("com.example.entity.generated.ProductFilterParams").isEmpty(),
-            "no FilterParams without @ExposeField operations");
+        assertTrue(withoutSearch.generatedSourceFile("com.example.entity.generated.ProductSearchRequest").isEmpty(),
+            "no SearchRequest without Operation.SEARCH");
+        assertTrue(withoutSearch.generatedSourceFile("com.example.entity.generated.ProductSpec").isEmpty(),
+            "no Spec without Operation.SEARCH");
     }
 
     @Test
-    void controllerBindsFiltersFromModelAttribute() throws Exception {
+    void searchIsAPostWithAnOptionalJsonBody() throws Exception {
         Compilation c = compile(PRODUCT);
 
         assertThat(c).succeeded();
         String src = source(c, "com.example.entity.generated.ProductController");
-        assertTrue(src.contains("@ModelAttribute ProductFilterParams filters"), src);
-        assertTrue(src.contains("ProductSpec.withFilters(filters)"), src);
-        assertFalse(src.contains("@ParameterObject"), "springdoc is not on the classpath here");
+        assertTrue(src.contains("@PostMapping(\"/search\")"), src);
+        assertTrue(src.contains("@RequestBody(required = false)"), src);
+        assertTrue(src.contains("ProductSearchRequest request"), src);
+        // a missing body searches without filters, like {}
+        assertTrue(src.contains("ProductSearchRequest filters = request != null ? request : new ProductSearchRequest()"), src);
+        assertTrue(src.contains("repository.findAll(ProductSpec.withFilters(filters))"), src);
+        assertTrue(src.contains("examples = @ExampleObject(name = \"noFilters\", summary = \"No filters: every record\", description = \"Add keys from the schema to narrow the result\", value = \"{}\")"), src);
     }
 
     @Test
-    void controllerAddsParameterObjectWhenSpringdocIsPresent() throws Exception {
-        Compilation c = compile(PRODUCT, SPRINGDOC_PARAMETER_OBJECT);
+    void findAllNoLongerTakesFilters() throws Exception {
+        Compilation c = compile(PRODUCT);
 
         assertThat(c).succeeded();
-        assertTrue(source(c, "com.example.entity.generated.ProductController")
-            .contains("@ParameterObject @ModelAttribute ProductFilterParams filters"));
+        String src = source(c, "com.example.entity.generated.ProductController");
+        assertTrue(src.contains("public ResponseEntity<List<ProductDto>> findAll() {"), src);
+        assertTrue(src.contains("mapper.toDtoList(repository.findAll())"), src);
+        assertFalse(src.contains("@ModelAttribute"), src);
+    }
+
+    @Test
+    void searchUsesReadRolesNotWriteRoles() throws Exception {
+        Compilation c = compile(product("""
+            path = "products", authType = AuthType.BASIC, readRoles = "VIEWER", writeRoles = "ADMIN",
+            expose = {Operation.FIND_ALL, Operation.CREATE, Operation.SEARCH}""", """
+            @ExposeField(filterOperations = FilterOperation.EQ)
+            private String name;
+            """));
+
+        assertThat(c).succeeded();
+        String src = source(c, "com.example.entity.generated.ProductSecurityConfigurer");
+        assertTrue(src.contains(".requestMatchers(HttpMethod.POST, \"/api/products/search\").hasAnyRole(\"VIEWER\")"), src);
+        assertTrue(src.contains(".requestMatchers(HttpMethod.POST, \"/api/products\").hasAnyRole(\"ADMIN\")"), src);
+    }
+
+    @Test
+    void publicSearchIsPermitted() throws Exception {
+        Compilation c = compile(PRODUCT);
+
+        assertThat(c).succeeded();
+        assertTrue(source(c, "com.example.entity.generated.ProductSecurityConfigurer")
+            .contains(".requestMatchers(HttpMethod.POST, \"/api/products/search\").permitAll()"));
+    }
+
+    @Test
+    void filtersWithoutSearchWarn() {
+        Compilation c = compile(PRODUCT_WITHOUT_SEARCH);
+
+        assertThat(c).succeeded();
+        assertThat(c).hadWarningContaining(
+            "Product declares @ExposeField filterOperations but @ExposeEntity does not expose Operation.SEARCH — the filters are not used");
+    }
+
+    @Test
+    void searchWithoutFiltersWarnsAndMatchesEverything() throws Exception {
+        Compilation c = compile(product("private String name;\n"));
+
+        assertThat(c).succeeded();
+        assertThat(c).hadWarningContaining(
+            "Product exposes Operation.SEARCH but no field declares @ExposeField(filterOperations = ...) — the search endpoint returns every record");
+        assertTrue(source(c, "com.example.entity.generated.ProductSearchRequest")
+            .contains("allowed keys: none (no field declares filterOperations)"));
+    }
+
+    @Test
+    void searchAndFiltersTogetherDoNotWarn() {
+        Compilation c = compile(PRODUCT);
+
+        assertThat(c).succeeded();
+        assertThat(c).hadWarningCount(0);
+    }
+
+    // ── SearchRequest JSON binding ────────────────────────────────────────────
+
+    /** A mapper like Spring Boot's: unknown properties are not a failure by default. */
+    private static final JsonMapper LENIENT_MAPPER = JsonMapper.builder()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .build();
+
+    @Test
+    void searchRequestReadsKeysIntoProperties() throws Exception {
+        Compilation c = compile(PRODUCT);
+        assertThat(c).succeeded();
+        Class<?> requestClass = loadGenerated(c, "com.example.entity.generated.ProductSearchRequest");
+
+        Object request = LENIENT_MAPPER.readValue(
+            "{\"price_gt\": 10.5, \"status_in\": [\"ACTIVE\"], \"deletedAt_is_null\": true}", requestClass);
+
+        assertEquals(new java.math.BigDecimal("10.5"), requestClass.getMethod("getPriceGt").invoke(request));
+        assertEquals("[ACTIVE]", requestClass.getMethod("getStatusIn").invoke(request).toString());
+        assertEquals(Boolean.TRUE, requestClass.getMethod("getDeletedAtIsNull").invoke(request));
+        assertEquals(null, requestClass.getMethod("getName").invoke(request));
+    }
+
+    @Test
+    void searchRequestRejectsUnknownKeysEvenWhenTheMapperIgnoresThem() throws Exception {
+        Compilation c = compile(PRODUCT);
+        assertThat(c).succeeded();
+        Class<?> requestClass = loadGenerated(c, "com.example.entity.generated.ProductSearchRequest");
+
+        // a typo, and an operation the field does not declare (stock has GT and LT only)
+        for (String key : new String[] {"pirce_gt", "stock"}) {
+            Exception e = assertThrows(Exception.class,
+                () -> LENIENT_MAPPER.readValue("{\"" + key + "\": 1}", requestClass));
+            assertTrue(e.getMessage().contains("Unknown search key '" + key + "' for Product — allowed keys: name, name_ne, name_like, price,"),
+                e.getMessage());
+        }
+    }
+
+    @Test
+    void searchRequestRejectsValuesOfTheWrongType() throws Exception {
+        Compilation c = compile(PRODUCT);
+        assertThat(c).succeeded();
+        Class<?> requestClass = loadGenerated(c, "com.example.entity.generated.ProductSearchRequest");
+
+        Exception e = assertThrows(Exception.class,
+            () -> LENIENT_MAPPER.readValue("{\"price_gt\": \"cheap\"}", requestClass));
+        assertTrue(e.getMessage().contains("price_gt"), e.getMessage());
     }
 
     // ── Compile-time validation ───────────────────────────────────────────────
@@ -494,28 +615,28 @@ class FilterGeneratorTest {
             """);
 
     @Test
-    void toOneRelationFiltersBindTheRelatedIdAsCategoryId() throws Exception {
+    void toOneRelationFiltersTakeTheRelatedIdAsCategoryId() throws Exception {
         Compilation c = compile(CATEGORY, BASE_ENTITY, TAG, PRODUCT_WITH_RELATIONS);
 
         assertThat(c).succeeded();
-        String src = source(c, "com.example.entity.generated.ProductFilterParams");
-        assertTrue(src.contains("Long categoryId,"), src);
-        assertTrue(src.contains("@BindParam(\"categoryId_ne\") Long categoryIdNe"), src);
-        assertTrue(src.contains("@BindParam(\"categoryId_in\") List<Long> categoryIdIn"), src);
-        assertTrue(src.contains("@BindParam(\"categoryId_not_in\") List<Long> categoryIdNotIn"), src);
-        assertTrue(src.contains("@BindParam(\"categoryId_is_null\") Boolean categoryIdIsNull"), src);
+        String src = source(c, "com.example.entity.generated.ProductSearchRequest");
+        assertKey(src, "categoryId", "Long categoryId");
+        assertKey(src, "categoryId_ne", "Long categoryIdNe");
+        assertKey(src, "categoryId_in", "List<Long> categoryIdIn");
+        assertKey(src, "categoryId_not_in", "List<Long> categoryIdNotIn");
+        assertKey(src, "categoryId_is_null", "Boolean categoryIdIsNull");
         assertTrue(src.contains("category id equals"), src);
     }
 
     @Test
-    void toManyRelationFiltersBindListsOfTheRelatedIdType() throws Exception {
+    void toManyRelationFiltersTakeListsOfTheRelatedIdType() throws Exception {
         Compilation c = compile(CATEGORY, BASE_ENTITY, TAG, PRODUCT_WITH_RELATIONS);
 
         assertThat(c).succeeded();
-        String src = source(c, "com.example.entity.generated.ProductFilterParams");
-        assertTrue(src.contains("@BindParam(\"tags_in\") List<UUID> tagsIn"), src);
-        assertTrue(src.contains("@BindParam(\"tags_not_in\") List<UUID> tagsNotIn"), src);
-        assertTrue(src.contains("tags has any of the ids (comma-separated)"), src);
+        String src = source(c, "com.example.entity.generated.ProductSearchRequest");
+        assertKey(src, "tags_in", "List<UUID> tagsIn");
+        assertKey(src, "tags_not_in", "List<UUID> tagsNotIn");
+        assertTrue(src.contains("tags has any of the ids\""), src);
     }
 
     @Test

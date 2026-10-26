@@ -1,6 +1,6 @@
 # Architecture — spring-xpose
 
-spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes **or `@ExposeDocument` on MongoDB document classes** and writes six `.java` source files per annotated class — eight when fields carry `@ExposeField` filters — into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
+spring-xpose is a **Java Annotation Processor (APT)** that runs at compile time inside the Gradle/Maven build. It reads `@ExposeEntity` on JPA entity classes **or `@ExposeDocument` on MongoDB document classes** and writes six `.java` source files per annotated class — eight when the class exposes `Operation.SEARCH` — into the build's annotation-processing output directory. Those files are compiled in the same build round as regular source, so no bytecode manipulation, no runtime reflection, no Spring proxies.
 
 ---
 
@@ -47,10 +47,10 @@ annotations  ←  processor  ←  (user's app at compile time)
 │          ├──▶ DtoGenerator          → ProductDto.java        │
 │          ├──▶ RequestDtoGenerator   → ProductRequestDto.java │
 │          ├──▶ MapperGenerator       → ProductMapper.java     │
-│          ├──▶ FilterParamsGenerator → ProductFilterParams.java│
-│          │      (only with @ExposeField filters)             │
+│          ├──▶ SearchRequestGenerator → ProductSearchRequest.java
+│          │      (only with Operation.SEARCH)                 │
 │          ├──▶ SpecificationGenerator → ProductSpec.java      │
-│          │      (only with @ExposeField filters)             │
+│          │      (only with Operation.SEARCH)                 │
 │          ├──▶ RestControllerGenerator → ProductController.java│
 │          └──▶ SecurityConfigurerGenerator → ProductSecurityConfigurer.java
 │                                                              │
@@ -181,13 +181,13 @@ classDiagram
     class MapperGenerator {
         +generate(EntityModel)
     }
-    class FilterParamsGenerator {
+    class SearchRequestGenerator {
         +generate(EntityModel)
-        <<only with @ExposeField filters>>
+        <<only with Operation.SEARCH>>
     }
     class SpecificationGenerator {
         +generate(EntityModel)
-        <<only with @ExposeField filters>>
+        <<only with Operation.SEARCH>>
     }
     class RestControllerGenerator {
         +generate(EntityModel)
@@ -200,7 +200,7 @@ classDiagram
     ExposeEntityProcessor --> DtoGenerator
     ExposeEntityProcessor --> RequestDtoGenerator
     ExposeEntityProcessor --> MapperGenerator
-    ExposeEntityProcessor --> FilterParamsGenerator
+    ExposeEntityProcessor --> SearchRequestGenerator
     ExposeEntityProcessor --> SpecificationGenerator
     ExposeEntityProcessor --> RestControllerGenerator
     ExposeEntityProcessor --> SecurityConfigurerGenerator
@@ -259,6 +259,20 @@ ProductController.findAll()
         │
         ▼
 200 OK  List<ProductDto>
+
+HTTP POST /api/products/search?page=0&size=20  { "price_gt": 10, "categoryId": 3 }
+        │
+        ▼
+ProductController.search(ProductSearchRequest, Pageable)
+        │   (Jackson reads the body — 400 on an unknown key or a bad value)
+        ├── SerializationContext.set(LIST)
+        ├── repository.findAll(ProductSpec.withFilters(request), pageable)
+        │       └── WHERE price > 10 AND category_id = 3
+        ├── page.map(mapper::toDto)
+        └── SerializationContext.clear()
+        │
+        ▼
+200 OK  Page<ProductDto>
 
 HTTP POST /api/products  { "name":"Laptop", "categoryId": 3 }
         │

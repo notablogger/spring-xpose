@@ -30,8 +30,8 @@ import java.io.IOException;
  * as the controller and security configurer, so it is picked up automatically
  * by Spring Data's repository scanning.
  *
- * <p>JPA entities with {@code @ExposeField} filters also extend
- * {@code JpaSpecificationExecutor<Entity>}, used by the generated {@code findAll}.
+ * <p>JPA entities exposing {@code Operation.SEARCH} also extend
+ * {@code JpaSpecificationExecutor<Entity>}, used by the generated {@code search}.
  */
 public class RepositoryGenerator {
 
@@ -62,8 +62,8 @@ public class RepositoryGenerator {
             .addAnnotation(repository)
             .addSuperinterface(superInterface);
 
-        // JPA entities with filters need JpaSpecificationExecutor for Specification-based queries
-        if (model.storeType() == StoreType.JPA && model.hasFilters()) {
+        // JPA entities with SEARCH need JpaSpecificationExecutor for Specification-based queries
+        if (model.storeType() == StoreType.JPA && model.searchable()) {
             ClassName specExecutor = ClassName.get(
                 "org.springframework.data.jpa.repository", "JpaSpecificationExecutor");
             repoBuilder.addSuperinterface(ParameterizedTypeName.get(specExecutor, entityClass));

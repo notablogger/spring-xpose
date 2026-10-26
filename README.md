@@ -184,6 +184,8 @@ ProductController.java         ← @RestController at /api/products, returns Pro
 ProductSecurityConfigurer.java ← SecurityFilterChain scoped to /api/products/**
 ```
 
+Exposing `Operation.SEARCH` adds `ProductSearchRequest.java` (the JSON search body) and `ProductSpec.java` (the query builder).
+
 These are real `.java` files — open them in your IDE, set breakpoints, read them.
 
 ---
@@ -233,23 +235,32 @@ public class Note {
 | Attribute | Default | Description |
 |---|---|---|
 | `path` | entity name pluralised | URL segment — `"products"` → `/api/products` |
-| `expose` | all five operations | Which HTTP operations to generate |
+| `expose` | the five CRUD operations | Which HTTP operations to generate; `SEARCH` (`POST /api/<path>/search`) is opt-in |
 | `authType` | `NONE` | `NONE`, `BASIC`, or `OAUTH2` |
 | `readRoles` / `writeRoles` | `{}` | Role-based access split |
 | `customMapper` | `void.class` | Bring your own Spring bean mapper |
 | `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | `@ExposeEntity` only — how related entities appear in the DTO |
 
-**Filtering `findAll`** — mark fields with `@ExposeField`:
+**Search** — add `Operation.SEARCH` to `expose` and mark fields with `@ExposeField`:
 ```java
-@ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.LIKE})
-private String name;            // ?name=Widget   ?name_like=widg
+@ExposeEntity(path = "products", expose = {Operation.FIND_ALL, Operation.FIND_BY_ID, Operation.CREATE,
+                                           Operation.UPDATE, Operation.DELETE, Operation.SEARCH})
+public class Product {
+    @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.LIKE})
+    private String name;            // "name": "Widget"   "name_like": "widg"
 
-@ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LT})
-private BigDecimal price;       // ?price_gt=10&price_lt=100
+    @ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LT})
+    private BigDecimal price;       // "price_gt": 10, "price_lt": 100
+}
 ```
-Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`?status_in=A,B`), `IS_NULL` (`?deletedAt_is_null=true`). All filters are optional and AND-ed. On collection fields (`@ElementCollection List<String> tags`) `IN` / `NOT_IN` mean *has any* / *has none* of the values. Relations filter by id: `?categoryId=5`, `?suppliers_in=1,2`. Mismatches (e.g. `LIKE` on a number) fail the build.
+```bash
+curl -X POST http://localhost:8080/api/products/search \
+  -H "Content-Type: application/json" \
+  -d '{"name_like":"widg","price_gt":10,"price_lt":100}'
+```
+Operations: `EQ`, `NE`, `GT`, `GTE`, `LT`, `LTE`, `LIKE` (case-insensitive contains), `IN` / `NOT_IN` (`"status_in": ["A","B"]`), `IS_NULL` (`"deletedAt_is_null": true`). All keys are optional and AND-ed; unknown keys are rejected with `400`. On collection fields (`@ElementCollection List<String> tags`) `IN` / `NOT_IN` mean *has any* / *has none* of the values. Relations filter by id: `"categoryId": 5`, `"suppliers_in": [1, 2]`. Mismatches (e.g. `LIKE` on a number) fail the build. `GET /api/products` stays an unfiltered list. Search is a `POST` because a `GET` cannot carry a body — the read-only, retry-safe `QUERY` method (RFC 10008) is planned once Spring supports it.
 
-→ Operations, value formats, validation rules and limitations: **[`docs/tech/annotation-reference.md#exposefield--filtering-findall`](docs/tech/annotation-reference.md#exposefield--filtering-findall)**
+→ Operations, value formats, validation rules, why it is a POST, and limitations: **[`docs/tech/annotation-reference.md#exposefield--search-filters`](docs/tech/annotation-reference.md#exposefield--search-filters)**
 
 → Full attribute reference, operation table, auth types, `@ExposeDocument` guide, relation modes, request DTO rules, and custom mapper guide: **[`docs/tech/annotation-reference.md`](docs/tech/annotation-reference.md)**
 
@@ -353,9 +364,11 @@ Run tests:
 - [x] OpenAPI / Swagger UI with auth scheme
 - [x] Request DTO — separate request/response shapes with validation annotation propagation
 - [x] Custom mapper — plug in your own Spring bean via `customMapper = YourMapper.class`
-- [x] Query filtering — `@ExposeField(filterOperations = …)` on fields: `EQ`, `NE`, ranges, `LIKE`, `IN` / `NOT_IN`, `IS_NULL`, collection fields
-- [x] Relation filters by id — `?categoryId=5`, `?suppliers_in=1,2`
-- [ ] Relation filters by related attributes — `?category_name=Books`
+- [x] Search — `Operation.SEARCH` (`POST /api/<path>/search`) with `@ExposeField(filterOperations = …)` on fields: `EQ`, `NE`, ranges, `LIKE`, `IN` / `NOT_IN`, `IS_NULL`, collection fields
+- [x] Relation filters by id — `"categoryId": 5`, `"suppliers_in": [1, 2]`
+- [ ] Relation filters by related attributes — `"category_name": "Books"`
+- [ ] OR / grouped search conditions
+- [ ] Search over the HTTP `QUERY` method (RFC 10008), next to `POST /search`
 - [ ] GraphQL — compile-time DataFetcher wiring
 
 ---

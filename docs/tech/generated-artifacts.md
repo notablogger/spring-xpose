@@ -1,6 +1,6 @@
 # Generated Artifacts — spring-xpose
 
-For every class annotated with `@ExposeEntity` or `@ExposeDocument`, spring-xpose writes **six `.java` files** — eight when the class has `@ExposeField` filters — into:
+For every class annotated with `@ExposeEntity` or `@ExposeDocument`, spring-xpose writes **six `.java` files** — eight when the class exposes `Operation.SEARCH` — into:
 
 ```
 build/generated/sources/annotationProcessor/java/main/
@@ -13,10 +13,10 @@ build/generated/sources/annotationProcessor/java/main/
     └── <Entity>SecurityConfigurer.java
 ```
 
-Two more files are written only when at least one field has `@ExposeField(filterOperations = ...)`:
+Two more files are written only when `expose` lists `Operation.SEARCH`:
 
 ```
-    ├── <Entity>FilterParams.java         (query filter parameters for findAll)
+    ├── <Entity>SearchRequest.java        (JSON body of POST /api/<path>/search)
     └── <Entity>Spec.java                 (JPA Specification / MongoDB Query builder)
 ```
 
@@ -41,6 +41,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
 **Provides:**
 - `findAll()` / `findAll(Pageable)` — for `FIND_ALL`
+- `findAll(Specification)` / `findAll(Specification, Pageable)` — for `SEARCH`: JPA repositories of classes exposing `SEARCH` also extend `JpaSpecificationExecutor<Entity>`
 - `findById(id)` — for `FIND_BY_ID`
 - `save(entity)` — for `CREATE` and `UPDATE`
 - `existsById(id)` / `deleteById(id)` — for `DELETE`
@@ -176,11 +177,28 @@ When `@ExposeEntity(customMapper = MyMapper.class)` is set:
 
 | `Operation` | HTTP method | Path | Request body | Response |
 |---|---|---|---|---|
-| `FIND_ALL` | `GET` | `/api/{path}` | — (optional filter query params with `@ExposeField`) | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` |
+| `FIND_ALL` | `GET` | `/api/{path}` | — | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` — every record |
 | `FIND_BY_ID` | `GET` | `/api/{path}/{id}` | — | `200 Dto` / `404` |
 | `CREATE` | `POST` | `/api/{path}` | `@Valid RequestDto` | `201 Dto` / `400` |
 | `UPDATE` | `PUT` | `/api/{path}/{id}` | `@Valid RequestDto` | `200 Dto` / `400` / `404` |
 | `DELETE` | `DELETE` | `/api/{path}/{id}` | — | `204` / `404` |
+| `SEARCH` | `POST` | `/api/{path}/search` | optional `SearchRequest` (missing = `{}`) | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` / `400` |
+
+With `pageable = true`, `findAll` and `search` also take a `Pageable` (`?page=&size=&sort=`), annotated `@ParameterObject` when springdoc is on the classpath so Swagger UI shows three optional query parameters.
+
+```java
+@PostMapping("/search")
+public ResponseEntity<Page<ProductDto>> search(
+    @RequestBody(required = false) ProductSearchRequest request, @ParameterObject Pageable pageable) {
+  ProductSearchRequest filters = request != null ? request : new ProductSearchRequest();
+  SerializationContext.set(SerializationContext.Mode.LIST);
+  try {
+    return ResponseEntity.ok(repository.findAll(ProductSpec.withFilters(filters), pageable).map(mapper::toDto));
+  } finally {
+    SerializationContext.clear();
+  }
+}
+```
 
 ### Dependencies injected into the controller
 
@@ -189,12 +207,12 @@ When `@ExposeEntity(customMapper = MyMapper.class)` is set:
 | `repository` | `<Entity>Repository` | always |
 | `mapper` | `<Entity>Mapper` | always |
 | `entityManager` | `jakarta.persistence.EntityManager` | only when `CREATE` or `UPDATE` is enabled and the entity has non-ignored single relations |
-| `mongoTemplate` | `MongoTemplate` | only for `@ExposeDocument` with `@ExposeField` filters — runs the filter `Query` |
+| `mongoTemplate` | `MongoTemplate` | only for `@ExposeDocument` exposing `SEARCH` — runs the filter `Query` |
 
 ### `SerializationContext` usage
 
 Before returning a response, the controller sets a `ThreadLocal` mode flag:
-- `SerializationContext.set(LIST)` — for `findAll` (IDs for relations)
+- `SerializationContext.set(LIST)` — for `findAll` and `search` (IDs for relations)
 - `SerializationContext.set(SINGLE)` — for `findById` (full objects for `IDS_FOR_LIST_OBJECT_FOR_SINGLE`)
 
 The `finally` block always calls `SerializationContext.clear()` to avoid cross-request leakage.
@@ -219,9 +237,16 @@ if (requestDto.getCategoryId() != null) {
 
 ### Generated security rules by `authType`
 
-**`AuthType.NONE`:**
+**`AuthType.NONE`** — each exposed operation is public, anything else is denied:
 ```java
-http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+http.authorizeHttpRequests(auth -> auth
+    .requestMatchers(GET,  "/api/products")        .permitAll()
+    .requestMatchers(GET,  "/api/products/**")     .permitAll()
+    .requestMatchers(POST, "/api/products/search") .permitAll()   // SEARCH
+    .requestMatchers(POST, "/api/products")        .permitAll()
+    // PUT / DELETE likewise
+    .anyRequest().denyAll()
+);
 // no auth mechanism configured
 ```
 
@@ -230,6 +255,7 @@ http.authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 http.authorizeHttpRequests(auth -> auth
     .requestMatchers(GET,    "/api/products")      .hasAnyRole("CUSTOMER", "ADMIN")
     .requestMatchers(GET,    "/api/products/**")   .hasAnyRole("CUSTOMER", "ADMIN")
+    .requestMatchers(POST,   "/api/products/search").hasAnyRole("CUSTOMER", "ADMIN")   // SEARCH is a read
     .requestMatchers(POST,   "/api/products")      .hasAnyRole("ADMIN")
     .requestMatchers(PUT,    "/api/products/**")   .hasAnyRole("ADMIN")
     .requestMatchers(DELETE, "/api/products/**")   .hasAnyRole("ADMIN")
@@ -240,29 +266,37 @@ http.httpBasic(withDefaults());           // BASIC
 http.oauth2ResourceServer(o -> o.jwt(withDefaults()));  // OAUTH2
 ```
 
+Only exposed operations get a rule. `POST /api/<path>/search` always gets the **read** rule (`readRoles`, else `roles`, else `authenticated()`), never the write rule of `POST /api/<path>`.
+
 CSRF is disabled — REST APIs are stateless and do not use cookie-based sessions.
 
 ---
 
-## 7. `<Entity>FilterParams`
+## 7. `<Entity>SearchRequest`
 
-**Type:** `final` class, bound from query parameters via `@ModelAttribute` (plus `@ParameterObject` when springdoc is present)  
-**Generated when:** at least one field has `@ExposeField(filterOperations = ...)`
+**Type:** `final` class — the JSON request body of `POST /api/<path>/search`, read by Jackson  
+**Generated when:** `expose` lists `Operation.SEARCH` (with no `filterOperations` it has no properties and accepts only `{}`)
 
-One property per (field, operation): `EQ` uses the field name (`price`), every other operation `<field><Operation>` (`priceGt`, `statusNotIn`, `deletedAtIsNull`), bound from the query parameter `<field>_<operation>` (`price_gt`, `status_not_in`, `deletedAt_is_null`). Primitive field types are boxed, so an absent parameter is `null` and adds no condition. `IN` / `NOT_IN` properties are a `List` of the field type — of the element type for collection fields — and an empty list also adds no condition; `IS_NULL` properties are `Boolean`. Suffixed parameters carry two annotations — `@BindParam` so Spring MVC binds `?price_gt=`, and `@Parameter(name = ...)` so springdoc documents `price_gt` rather than the Java name:
+One property per (field, operation): `EQ` uses the field name (`price`), every other operation `<field><Operation>` (`priceGt`, `statusNotIn`, `deletedAtIsNull`), read from the JSON key `<field>_<operation>` (`price_gt`, `status_not_in`, `deletedAt_is_null`). Primitive field types are boxed, so an absent key is `null` and adds no condition. `IN` / `NOT_IN` properties are a `List` of the field type — of the element type for collection fields — and an empty list also adds no condition; `IS_NULL` properties are `Boolean`. Each property carries `@JsonProperty("<key>")` — Jackson reads that key and springdoc documents it — and `@Schema(description = ...)`. A `@JsonAnySetter` receives every key without a property and throws, so unknown keys are a `400` regardless of the application's `FAIL_ON_UNKNOWN_PROPERTIES` setting:
 
 ```java
-public final class ProductFilterParams {
-  @Parameter(name = "price", description = "price equals")
-  private final BigDecimal price;
+@Schema(description = "Search filters for Product. Every key is optional; keys are combined with AND. Unknown keys are rejected.")
+public final class ProductSearchRequest {
+  @JsonProperty("price")
+  @Schema(description = "price equals")
+  private BigDecimal price;
 
-  @Parameter(name = "price_gt", description = "price greater than")
-  private final BigDecimal priceGt;
-
-  public ProductFilterParams(BigDecimal price, @BindParam("price_gt") BigDecimal priceGt) { ... }
+  @JsonProperty("price_gt")
+  @Schema(description = "price greater than")
+  private BigDecimal priceGt;
 
   public BigDecimal getPrice() { return price; }
   public BigDecimal getPriceGt() { return priceGt; }
+
+  @JsonAnySetter
+  void rejectUnknownKey(String key, Object value) {
+    throw new IllegalArgumentException("Unknown search key '" + key + "' for Product — allowed keys: price, price_gt");
+  }
 }
 ```
 
@@ -270,10 +304,10 @@ public final class ProductFilterParams {
 
 ## 8. `<Entity>Spec`
 
-**Type:** class with a static `withFilters(<Entity>FilterParams)` method  
-**Generated when:** same as `<Entity>FilterParams`
+**Type:** class with a static `withFilters(<Entity>SearchRequest)` method  
+**Generated when:** same as `<Entity>SearchRequest`
 
-Each non-null filter property adds one condition; conditions are AND-ed.
+Each non-null search property adds one condition; conditions are AND-ed. No conditions match every record.
 
 | Operation | JPA (`CriteriaBuilder`) | MongoDB (`Criteria`) |
 |---|---|---|
@@ -295,7 +329,7 @@ Each non-null filter property adds one condition; conditions are AND-ed.
 - **MongoDB** — returns a `Query` built from `Criteria`, executed with `mongoTemplate.find(...)` (and `count(...)` for pageable). `LIKE` uses `Pattern.quote(value)` with the `i` option.
 
 ```java
-public static Specification<Product> withFilters(ProductFilterParams f) {
+public static Specification<Product> withFilters(ProductSearchRequest f) {
   return (root, query, cb) -> {
     List<Predicate> predicates = new ArrayList<>();
     if (f.getPrice() != null)
@@ -311,20 +345,21 @@ public static Specification<Product> withFilters(ProductFilterParams f) {
 
 ## Error responses from generated controllers
 
-A filter value that cannot be converted (`?price_gt=abc`, `?deletedAt_is_null=maybe`, a non-ISO date) is rejected while binding `<Entity>FilterParams`, before any query runs. The response is the `400` validation error below, with the `errors` map keyed by the **query parameter name** the client sent:
+A search body that cannot be read — a value of the wrong type (`{"price_gt": "abc"}`), a non-ISO date, a scalar where an array is expected, or an unknown key — is rejected while Jackson reads `<Entity>SearchRequest`, before any query runs. The response is the `400` malformed-body problem, with the failing **JSON key** (a path such as `categoryId_in[1]` for an array element) in `errors`:
 
 ```json
 {
-  "type": "urn:springxpose:validation-error",
-  "title": "Validation failed",
+  "type": "urn:springxpose:malformed-body",
+  "title": "Malformed request body",
   "status": 400,
-  "detail": "One or more fields failed validation.",
+  "detail": "The request body is invalid at 'price_gt': Cannot deserialize value of type `java.math.BigDecimal` from String \"abc\": not a valid representation",
   "errors": {
-    "price_gt": "Failed to convert value of type 'java.lang.String' to required type 'java.math.BigDecimal'; ...",
-    "deletedAt_is_null": "Failed to convert value of type 'java.lang.String' to required type 'java.lang.Boolean'; Invalid boolean value [maybe]"
+    "price_gt": "Cannot deserialize value of type `java.math.BigDecimal` from String \"abc\": not a valid representation"
   }
 }
 ```
+
+The same applies to `CREATE` / `UPDATE` bodies (`{"price": "abc"}` → `errors.price`). JSON that is not well-formed (`{oops`) has no failing key; its problem has only a `detail`.
 
 
 All generated controllers benefit from `SpringXposeExceptionHandler` (auto-configured by the starter). Responses follow **RFC 9457 Problem Detail** format:
