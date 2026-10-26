@@ -125,7 +125,7 @@ All generated types land in the `<entity-package>.generated` sub-package — thi
 - Generates `<Entity>Controller` — a `@RestController` at `/api/<basePath>`
 - Conditionally generates only the methods listed in `expose`
 - `findAll` returns every record: `List<Dto>` by default; `Page<Dto>` when `pageable = true`
-- With `Operation.SEARCH`, `search` is `@PostMapping("/search")` taking `@RequestBody(required = false) <Entity>SearchRequest` (a missing body is `{}`) and querying through `<Entity>Spec`; same `List` / `Page` return as `findAll`. Its OpenAPI request body has a `{}` example
+- With `Operation.SEARCH`, `search` is `@PostMapping("/search")` taking `@RequestBody(required = false) <Entity>SearchRequest` (a missing body is `{}`) and querying through `<Entity>Spec`; same `List` / `Page` return as `findAll`. Its OpenAPI request body has one example, `example`, with every search key and a placeholder value of its type (built by `SearchExamples`)
 - `Pageable` parameters get `@ParameterObject` when springdoc's annotation is on the processing classpath
 - `create` / `update` / `delete` are `@Transactional`
 - `update` uses load-then-merge: fetches the entity first, calls `mapper.updateEntity()`, then saves

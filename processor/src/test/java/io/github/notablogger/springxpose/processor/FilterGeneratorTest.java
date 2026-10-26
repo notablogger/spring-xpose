@@ -410,7 +410,56 @@ class FilterGeneratorTest {
         // a missing body searches without filters, like {}
         assertTrue(src.contains("ProductSearchRequest filters = request != null ? request : new ProductSearchRequest()"), src);
         assertTrue(src.contains("repository.findAll(ProductSpec.withFilters(filters))"), src);
-        assertTrue(src.contains("examples = @ExampleObject(name = \"noFilters\", summary = \"No filters: every record\", description = \"Add keys from the schema to narrow the result\", value = \"{}\")"), src);
+        assertTrue(src.contains("examples = @ExampleObject(name = \"example\", summary = \"Every search key\""), src);
+    }
+
+    @Test
+    void searchExampleHasEveryKeyWithAPlaceholderOfItsType() throws Exception {
+        Compilation c = compile(CATEGORY, BASE_ENTITY, TAG, product("""
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.LIKE})
+            private String name;
+
+            @ExposeField(filterOperations = {FilterOperation.GT, FilterOperation.LT})
+            private int stock;
+
+            @ExposeField(filterOperations = {FilterOperation.IN, FilterOperation.NOT_IN})
+            private Status status;
+
+            @ExposeField(filterOperations = {FilterOperation.GTE, FilterOperation.IS_NULL})
+            private java.time.LocalDate launched;
+
+            @ManyToOne
+            @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.IN})
+            private Category category;
+
+            @ManyToMany
+            @ExposeField(filterOperations = FilterOperation.IN)
+            private java.util.Set<Tag> tags;
+
+            public Category getCategory() { return category; }
+            public void setCategory(Category category) { this.category = category; }
+
+            public enum Status { ACTIVE, DISCONTINUED }
+            """));
+
+        assertThat(c).succeeded();
+        // in the generated source the JSON is a Java string literal, so its quotes are escaped
+        String example = "{\\\"name\\\":\\\"string\\\",\\\"name_like\\\":\\\"string\\\","
+            + "\\\"stock_gt\\\":0,\\\"stock_lt\\\":0,"
+            + "\\\"status_in\\\":[\\\"ACTIVE\\\"],\\\"status_not_in\\\":[\\\"ACTIVE\\\"],"
+            + "\\\"launched_gte\\\":\\\"2026-01-01\\\",\\\"launched_is_null\\\":true,"
+            + "\\\"categoryId\\\":0,\\\"categoryId_in\\\":[0],"
+            + "\\\"tags_in\\\":[\\\"00000000-0000-0000-0000-000000000000\\\"]}";
+        String src = source(c, "com.example.entity.generated.ProductController");
+        assertTrue(src.contains("value = \"" + example + "\""), src);
+    }
+
+    @Test
+    void searchExampleWithoutFiltersIsEmpty() throws Exception {
+        Compilation c = compile(product("private String name;\n"));
+
+        assertThat(c).succeeded();
+        assertTrue(source(c, "com.example.entity.generated.ProductController").contains("value = \"{}\""));
     }
 
     @Test

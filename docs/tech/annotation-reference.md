@@ -421,7 +421,12 @@ Use a path outside `/api/<path>/**`: the generated security chain for `/api/prod
 - Controller method `search` — `@PostMapping("/search")` with `@RequestBody(required = false)`, plus `Pageable` when `pageable = true`.
 - JPA repositories also extend `JpaSpecificationExecutor<Entity>`; MongoDB controllers get a `MongoTemplate`.
 - Security — `POST /api/<path>/search` gets the read rule (`readRoles`, `roles`, `authenticated()` or `permitAll()`), separate from `POST /api/<path>` (create), which keeps the write rule.
-- **OpenAPI:** Swagger UI shows the search body as one JSON schema — every key with its type (`status_in` as an array, `deletedAt_is_null` as a boolean, dates with `format: date`, …) and a description — with `{}` ("No filters: every record") as the ready-to-send example. `page` / `size` / `sort` appear as optional query parameters.
+- **OpenAPI:** Swagger UI shows the search body as one JSON schema — every key with its type (`status_in` as an array, `deletedAt_is_null` as a boolean, dates with `format: date`, …) and a description — and one example, `example`, that lists **every search key with a placeholder of its type** (`"string"`, `0`, `true`, the first enum constant, `"2026-01-01"` for dates, one-element arrays for `_in` / `_not_in`, `true` for `_is_null`). Every placeholder has the right type, so the example can be sent as is, but all keys are AND-ed, so it rarely matches a record: remove the keys you don't need (`{}` returns everything). `page` / `size` / `sort` appear as optional query parameters.
+
+  ```json
+  { "name": "string", "name_like": "string", "price_gte": 0, "price_lte": 0,
+    "status_in": ["ACTIVE"], "deletedAt_is_null": true, "categoryId": 0, "tags_in": ["string"] }
+  ```
 
 Details and generated source examples: [`generated-artifacts.md`](generated-artifacts.md#7-entitysearchrequest).
 

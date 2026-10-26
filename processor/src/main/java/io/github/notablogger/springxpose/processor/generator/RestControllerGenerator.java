@@ -376,8 +376,10 @@ public class RestControllerGenerator {
                     .addMember("content", "@$T(mediaType = $S, schema = @$T(implementation = $T.class),\n"
                             + "    examples = @$T(name = $S, summary = $S, description = $S, value = $S))",
                         OA_CONTENT, "application/json", OA_SCHEMA, searchRequestClass,
-                        OA_EXAMPLE_OBJECT, "noFilters", "No filters: every record",
-                        "Add keys from the schema to narrow the result", "{}")
+                        OA_EXAMPLE_OBJECT, "example", "Every search key",
+                        "Placeholder values by type. Every key is optional and keys are AND-ed: "
+                            + "remove the ones you don't need; {} returns every record.",
+                        SearchExamples.allKeys(model, processingEnv))
                     .build())
                 .build());
         addPageable(method, model);
