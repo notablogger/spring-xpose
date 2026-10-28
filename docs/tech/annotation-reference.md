@@ -26,7 +26,8 @@ The annotation you choose determines the persistence backend — there is no `st
     authType      = AuthType.BASIC,
     readRoles     = {"CUSTOMER", "ADMIN"},
     writeRoles    = {"ADMIN"},
-    customMapper  = MyOrderMapper.class              // optional — omit for MapStruct auto-impl
+    customMapper  = MyOrderMapper.class,             // optional — omit for MapStruct auto-impl
+    validator     = OrderValidator.class             // optional — Spring Validator run on create/update
 )
 public class Order {
     @ExposeField(filterOperations = {FilterOperation.EQ, FilterOperation.IN})
@@ -74,6 +75,7 @@ public class Note {
 | `writeRoles` | `String[]` | `{}` | Roles for `POST` (create) / `PUT` / `DELETE` (overrides `roles`) |
 | `pageable` | `boolean` | `false` | When `true`, `findAll` and `search` accept `Pageable` and return `Page<Dto>` |
 | `customMapper` | `Class<?>` | `void.class` | Optional custom Spring bean to use instead of the MapStruct-generated mapper |
+| `validator` | `Class<?>` | `void.class` | Optional Spring `Validator` bean run on create and update — see [Custom Validation](#custom-validation-optional) |
 
 ### `@ExposeEntity`-only attributes
 
@@ -512,4 +514,76 @@ public class Product { ... }
 > **Note:** Your class must implement the **generated** `<Entity>Mapper` interface (in the `<entity-package>.generated` package). Spring wires it automatically because it is a `@Component` satisfying the `<Entity>Mapper` type required by the generated controller.
 
 The sample project (`spring-xpose-sample-rest`) contains `CustomCategoryMapper` — a working demonstration that upper-cases category names in responses.
+
+---
+
+## Custom Validation (Optional)
+
+Annotations like `@NotBlank` and `@Size` are copied to the request DTO and checked before the controller runs. For rules they can't express — cross-field checks, or lookups against a database or another service — set `validator` to a Spring `org.springframework.validation.Validator` bean.
+
+### How it works
+
+1. The generated controller gets your validator through its constructor (so it must be a Spring bean, e.g. `@Component`).
+2. On `CREATE` and `UPDATE` the controller maps the request to the entity, resolves relations, then calls `validator.validate(entity, errors)` **before saving**. On update the validator sees the loaded entity with the request already merged in.
+3. If the validator rejects anything, the controller throws a `BindException`, which `SpringXposeExceptionHandler` turns into the same `400` problem as bean validation.
+4. At startup the controller calls `validator.supports(Entity.class)` and fails fast with an `IllegalStateException` if it returns `false`.
+5. The build fails if the class does not implement `org.springframework.validation.Validator`.
+
+Bean validation runs first: if `@NotBlank` fails, the custom validator is not called.
+
+### Example
+
+```java
+@Component
+public class OrderValidator implements Validator {
+
+    private final CustomerRepository customers;
+
+    public OrderValidator(CustomerRepository customers) { this.customers = customers; }
+
+    @Override
+    public boolean supports(Class<?> type) { return Order.class.equals(type); }
+
+    @Override
+    public void validate(Object target, Errors errors) {
+        Order order = (Order) target;
+        if (order.getShipDate() != null && order.getShipDate().isBefore(order.getOrderDate())) {
+            errors.rejectValue("shipDate", "order.shipDate.before", "must not be before orderDate");
+        }
+        if (order.getTotal() != null && order.getTotal().signum() > 0 && order.getLines().isEmpty()) {
+            errors.reject("order.empty", "an order with a total needs at least one line");
+        }
+    }
+}
+
+@Entity
+@ExposeEntity(path = "orders", validator = OrderValidator.class)
+public class Order { ... }
+```
+
+Response to `POST /api/orders` with a bad ship date:
+
+```json
+{
+  "type": "urn:springxpose:validation-error",
+  "title": "Validation failed",
+  "status": 400,
+  "detail": "One or more fields failed validation.",
+  "errors": {
+    "shipDate": "must not be before orderDate",
+    "_global": "an order with a total needs at least one line"
+  }
+}
+```
+
+- `errors.rejectValue("field", code, message)` is keyed by the field name. `errors.reject(code, message)` (not tied to a field) is listed under `_global`. Pass a default message — codes are not resolved against a `MessageSource`.
+- Several errors on one key are joined with `; `.
+- The validator sees the **entity**, not the request DTO, so it can also check fields hidden with `@ExposeField(hidden = true)`; a rejection on a hidden field still shows its name and message in `errors`.
+- Errors are read with direct field access, so entities without getters work.
+- `validator` has no effect when neither `CREATE` nor `UPDATE` is exposed.
+- On JPA, `UPDATE` is transactional and the loaded entity is already modified when the validator runs. Rejecting rolls the change back, but a validator should only read — never save or modify the entity.
+
+### OpenAPI
+
+`CREATE` and `UPDATE` document their `400` response with the `ProblemDetail` schema (`application/problem+json`) and an example including the `errors` map; `SEARCH` documents its `400` the same way with the malformed-body example.
 

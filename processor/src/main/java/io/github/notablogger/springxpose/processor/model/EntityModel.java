@@ -36,6 +36,8 @@ public record EntityModel(
     List<FilterFieldModel> filters,
     /** Fully-qualified class name of the custom mapper, or {@code null} for the generated one. */
     String customMapperClassName,
+    /** Fully-qualified class name of the custom {@code Validator}, or {@code null} for none. */
+    String validatorClassName,
     boolean pageable,
     /** Name of the {@code @Version} field, or {@code null} if none. */
     String versionFieldName,
@@ -70,8 +72,11 @@ public record EntityModel(
             ? qualifiedName.substring(0, qualifiedName.lastIndexOf('.')) : "";
 
         String basePath = annotation.path().isEmpty() ? toBasePath(simpleName) : annotation.path();
-        String customMapperClassName = resolveCustomMapper(element, env,
+        String customMapperClassName = resolveClassAttribute(element, "customMapper",
             "io.github.notablogger.springxpose.annotation.ExposeEntity");
+        String validatorClassName = resolveClassAttribute(element, "validator",
+            "io.github.notablogger.springxpose.annotation.ExposeEntity");
+        if (!validValidator(element, validatorClassName, "@ExposeEntity", env)) return null;
         StoreType storeType = StoreType.JPA; // @ExposeEntity is always JPA
 
         List<FieldModel> fields = new ArrayList<>();
@@ -153,6 +158,7 @@ public record EntityModel(
             roles, readRoles, writeRoles, hiddenFields,
             filters,
             customMapperClassName,
+            validatorClassName,
             annotation.pageable(),
             versionFieldName,
             storeType
@@ -167,8 +173,11 @@ public record EntityModel(
             ? qualifiedName.substring(0, qualifiedName.lastIndexOf('.')) : "";
 
         String basePath = annotation.path().isEmpty() ? toBasePath(simpleName) : annotation.path();
-        String customMapperClassName = resolveCustomMapper(element, env,
+        String customMapperClassName = resolveClassAttribute(element, "customMapper",
             "io.github.notablogger.springxpose.annotation.ExposeDocument");
+        String validatorClassName = resolveClassAttribute(element, "validator",
+            "io.github.notablogger.springxpose.annotation.ExposeDocument");
+        if (!validValidator(element, validatorClassName, "@ExposeDocument", env)) return null;
         StoreType storeType = StoreType.MONGO; // always MONGO for @ExposeDocument
 
         List<FieldModel> fields = new ArrayList<>();
@@ -225,6 +234,7 @@ public record EntityModel(
             roles, readRoles, writeRoles, hiddenFields,
             filters,
             customMapperClassName,
+            validatorClassName,
             annotation.pageable(),
             null, // no @Version for MongoDB documents
             storeType
@@ -462,19 +472,37 @@ public record EntityModel(
     }
 
     /**
-     * Reads {@code customMapper()} safely via AnnotationMirror to avoid
-     * {@link MirroredTypeException}. Returns {@code null} when the default {@code void.class}
-     * is set (meaning "use the generated mapper").
-     * Works for both {@link ExposeEntity} and {@link ExposeDocument}.
+     * Reports a compile error when {@code validator} is set but is not a
+     * {@code org.springframework.validation.Validator}. Returns {@code true} when valid or unset.
      */
-    private static String resolveCustomMapper(TypeElement element, ProcessingEnvironment env,
-                                               String annotationFqcn) {
+    private static boolean validValidator(TypeElement element, String validatorClassName,
+                                          String annotationName, ProcessingEnvironment env) {
+        if (validatorClassName == null) return true;
+        TypeElement springValidator = env.getElementUtils().getTypeElement("org.springframework.validation.Validator");
+        TypeElement configured = env.getElementUtils().getTypeElement(validatorClassName);
+        if (springValidator == null || configured == null) return true; // can't check — let javac resolve it
+        if (!isAssignableTo(configured.asType(), "org.springframework.validation.Validator", env)) {
+            env.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                annotationName + ": validator " + validatorClassName
+                + " must implement org.springframework.validation.Validator", element);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Reads a {@code Class<?>} attribute ({@code customMapper()}, {@code validator()}) safely via
+     * AnnotationMirror to avoid {@link MirroredTypeException}. Returns {@code null} when the default
+     * {@code void.class} is set. Works for both {@link ExposeEntity} and {@link ExposeDocument}.
+     */
+    private static String resolveClassAttribute(TypeElement element, String attribute,
+                                                String annotationFqcn) {
         for (AnnotationMirror am : element.getAnnotationMirrors()) {
             String annoType = am.getAnnotationType().toString();
             if (!annoType.equals(annotationFqcn)) continue;
             for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry
                     : am.getElementValues().entrySet()) {
-                if (!entry.getKey().getSimpleName().contentEquals("customMapper")) continue;
+                if (!entry.getKey().getSimpleName().contentEquals(attribute)) continue;
                 Object value = entry.getValue().getValue();
                 if (value instanceof TypeMirror tm) {
                     String typeName = tm.toString();
@@ -500,6 +528,11 @@ public record EntityModel(
     /** True when a user-supplied mapper should be used instead of the generated one. */
     public boolean hasCustomMapper() {
         return customMapperClassName != null;
+    }
+
+    /** True when a custom {@code Validator} runs on create and update. */
+    public boolean hasValidator() {
+        return validatorClassName != null;
     }
 
     /** True when this entity has a {@code @Version} field. */

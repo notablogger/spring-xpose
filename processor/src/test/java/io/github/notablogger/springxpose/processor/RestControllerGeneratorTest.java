@@ -259,6 +259,89 @@ class RestControllerGeneratorTest {
             "without springdoc on the classpath no springdoc annotation may be generated");
     }
 
+    private static final javax.tools.JavaFileObject BOOK_VALIDATOR = JavaFileObjects.forSourceString(
+        "com.example.entity.BookValidator",
+        """
+        package com.example.entity;
+        import org.springframework.validation.Errors;
+        import org.springframework.validation.Validator;
+        public class BookValidator implements Validator {
+            public boolean supports(Class<?> type) { return Book.class.equals(type); }
+            public void validate(Object target, Errors errors) {}
+        }
+        """
+    );
+
+    private String controllerSource(Compilation c) throws Exception {
+        return c.generatedSourceFile("com.example.entity.generated.BookController")
+            .orElseThrow().getCharContent(false).toString();
+    }
+
+    @Test
+    void validatorIsInjectedAndRunsBeforeSaveOnCreateAndUpdate() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", validator=BookValidator.class)"), REPO, BOOK_VALIDATOR);
+
+        assertThat(c).succeeded();
+        String src = controllerSource(c);
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("BookValidator validator"),
+            "the validator bean must be injected through the constructor");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("validator.supports(Book.class)"),
+            "an unsupported entity must fail at startup");
+        org.junit.jupiter.api.Assertions.assertEquals(2, src.split("validator\\.validate\\(entity", -1).length - 1,
+            "create and update must both validate");
+        org.junit.jupiter.api.Assertions.assertTrue(src.indexOf("validator.validate(entity")
+                < src.indexOf("repository.save(entity)"),
+            "validation must run before the entity is saved");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("throw new BindException(bindingResult)"));
+    }
+
+    @Test
+    void noValidatorByDefault() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\")"), REPO);
+
+        assertThat(c).succeeded();
+        org.junit.jupiter.api.Assertions.assertFalse(controllerSource(c).contains("validator"));
+    }
+
+    @Test
+    void validatorNotInjectedWithoutWriteOperations() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith(
+                "@ExposeEntity(path=\"books\", expose={Operation.FIND_ALL}, validator=BookValidator.class)"),
+                REPO, BOOK_VALIDATOR);
+
+        assertThat(c).succeeded();
+        org.junit.jupiter.api.Assertions.assertFalse(controllerSource(c).contains("validator"));
+    }
+
+    @Test
+    void validatorThatIsNotASpringValidatorFailsTheBuild() {
+        javax.tools.JavaFileObject notAValidator = JavaFileObjects.forSourceString(
+            "com.example.entity.NotAValidator",
+            "package com.example.entity; public class NotAValidator {}");
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", validator=NotAValidator.class)"), REPO, notAValidator);
+
+        assertThat(c).failed();
+        assertThat(c).hadErrorContaining("must implement org.springframework.validation.Validator");
+    }
+
+    @Test
+    void badRequestResponseDocumentsTheProblemBody() throws Exception {
+        Compilation c = javac().withProcessors(new ExposeEntityProcessor())
+            .compile(bookWith("@ExposeEntity(path=\"books\", expose={Operation.CREATE, Operation.UPDATE, Operation.SEARCH})"), REPO);
+
+        assertThat(c).succeeded();
+        String src = controllerSource(c);
+        org.junit.jupiter.api.Assertions.assertTrue(
+            src.split("application/problem\\+json", -1).length - 1 >= 3,
+            "create, update and search must document the 400 problem body");
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("ProblemDetail.class"));
+        org.junit.jupiter.api.Assertions.assertTrue(src.contains("urn:springxpose:validation-error"));
+    }
+
     @Test
     void pageableFalseGeneratesFlatList() throws Exception {
         Compilation c = javac().withProcessors(new ExposeEntityProcessor())

@@ -179,8 +179,8 @@ When `@ExposeEntity(customMapper = MyMapper.class)` is set:
 |---|---|---|---|---|
 | `FIND_ALL` | `GET` | `/api/{path}` | — | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` — every record |
 | `FIND_BY_ID` | `GET` | `/api/{path}/{id}` | — | `200 Dto` / `404` |
-| `CREATE` | `POST` | `/api/{path}` | `@Valid RequestDto` | `201 Dto` / `400` |
-| `UPDATE` | `PUT` | `/api/{path}/{id}` | `@Valid RequestDto` | `200 Dto` / `400` / `404` |
+| `CREATE` | `POST` | `/api/{path}` | `@Valid RequestDto` | `201 Dto` / `400` (bean validation or the custom `validator`) |
+| `UPDATE` | `PUT` | `/api/{path}/{id}` | `@Valid RequestDto` | `200 Dto` / `400` (bean validation or the custom `validator`) / `404` |
 | `DELETE` | `DELETE` | `/api/{path}/{id}` | — | `204` / `404` |
 | `SEARCH` | `POST` | `/api/{path}/search` | optional `SearchRequest` (missing = `{}`) | `200 List<Dto>` or `200 Page<Dto>` if `pageable=true` / `400` |
 
@@ -367,7 +367,7 @@ All generated controllers benefit from `SpringXposeExceptionHandler` (auto-confi
 | Exception | HTTP status | `type` URN |
 |---|---|---|
 | `HttpMessageNotReadableException` | `400 Bad Request` | `urn:springxpose:malformed-body` |
-| `MethodArgumentNotValidException` | `400 Bad Request` | `urn:springxpose:validation-error` |
+| `MethodArgumentNotValidException`, `BindException` (custom `validator`) | `400 Bad Request` | `urn:springxpose:validation-error` |
 | `EntityNotFoundException` | `422 Unprocessable Entity` | `urn:springxpose:relation-not-found` |
 | `DataIntegrityViolationException` | `409 Conflict` | `urn:springxpose:constraint-violation` |
 | `OptimisticLockingFailureException` | `409 Conflict` | `urn:springxpose:optimistic-lock` |

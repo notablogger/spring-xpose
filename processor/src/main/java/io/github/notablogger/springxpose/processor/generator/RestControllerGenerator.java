@@ -24,6 +24,23 @@ public class RestControllerGenerator {
     private static final String    SPRINGDOC_PARAMETER_OBJECT = "org.springdoc.core.annotations.ParameterObject";
     private static final ClassName OA_SECURITY_REQ  = ClassName.get("io.swagger.v3.oas.annotations.security", "SecurityRequirement");
 
+    private static final String VALIDATION_EXAMPLE = """
+        {
+          "type": "urn:springxpose:validation-error",
+          "title": "Validation failed",
+          "status": 400,
+          "detail": "One or more fields failed validation.",
+          "errors": { "name": "must not be blank" }
+        }""";
+    private static final String MALFORMED_EXAMPLE = """
+        {
+          "type": "urn:springxpose:malformed-body",
+          "title": "Malformed request body",
+          "status": 400,
+          "detail": "The request body is invalid at 'price_gt': not a valid representation",
+          "errors": { "price_gt": "not a valid representation" }
+        }""";
+
     private final ProcessingEnvironment processingEnv;
 
     public RestControllerGenerator(ProcessingEnvironment processingEnv) {
@@ -56,6 +73,9 @@ public class RestControllerGenerator {
             && hasRelations;
         boolean needsMongoTemplate = model.storeType() == StoreType.MONGO
             && model.searchable();
+
+        boolean hasValidator = model.hasValidator() && hasWriteOps;
+        ClassName validatorClass = hasValidator ? ClassName.bestGuess(model.validatorClassName()) : null;
 
         String entity = model.entitySimpleName();
 
@@ -103,6 +123,20 @@ public class RestControllerGenerator {
                 FieldSpec.builder(mongoTemplate, "mongoTemplate", Modifier.PRIVATE, Modifier.FINAL).build());
             ctor.addParameter(mongoTemplate, "mongoTemplate")
                 .addStatement("this.mongoTemplate = mongoTemplate");
+        }
+
+        if (hasValidator) {
+            controller.addField(
+                FieldSpec.builder(validatorClass, "validator", Modifier.PRIVATE, Modifier.FINAL).build());
+            // Fail at startup, not on the first request, if the validator can't handle this entity
+            ctor.addParameter(validatorClass, "validator")
+                .beginControlFlow("if (!validator.supports($T.class))", entityClass)
+                .addStatement("throw new $T($S + validator.getClass().getName() + $S)",
+                    IllegalStateException.class, "Validator ",
+                    " does not support " + model.entityClassName() + " — fix @" + annotationName(model)
+                        + "(validator = ...) on " + entity)
+                .endControlFlow()
+                .addStatement("this.validator = validator");
         }
 
         controller.addMethod(ctor.build());
@@ -160,8 +194,9 @@ public class RestControllerGenerator {
                     .addMember("operationId", "$S", "create" + entity)
                     .build())
                 .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
-                    .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
-                        OA_API_RESPONSE, "201", "Created", OA_API_RESPONSE, "400", "Validation error")
+                    .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  $L\n}",
+                        OA_API_RESPONSE, "201", "Created",
+                        problemResponse("400", "Validation error", VALIDATION_EXAMPLE))
                     .build())
                 .addModifiers(Modifier.PUBLIC)
                 .returns(returnType)
@@ -182,6 +217,7 @@ public class RestControllerGenerator {
             if (needsEntityManager) {
                 addRelationResolution(create, model, entityManager);
             }
+            addCustomValidation(create, hasValidator, entity);
             create.addStatement("return $T.status($T.CREATED).body(mapper.toDto(repository.save(entity)))",
                 responseEntity, httpStatus);
             controller.addMethod(create.build());
@@ -198,9 +234,9 @@ public class RestControllerGenerator {
                     .addMember("operationId", "$S", "update" + entity)
                     .build())
                 .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
-                    .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
+                    .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  $L,\n  @$T(responseCode = $S, description = $S)\n}",
                         OA_API_RESPONSE, "200", "Updated",
-                        OA_API_RESPONSE, "400", "Validation error",
+                        problemResponse("400", "Validation error", VALIDATION_EXAMPLE),
                         OA_API_RESPONSE, "404", "Not found")
                     .build())
                 .addModifiers(Modifier.PUBLIC)
@@ -234,6 +270,7 @@ public class RestControllerGenerator {
             if (needsEntityManager) {
                 addRelationResolution(update, model, entityManager);
             }
+            addCustomValidation(update, hasValidator, entity);
             update.addStatement("return $T.ok(mapper.toDto(repository.save(entity)))", responseEntity);
             controller.addMethod(update.build());
         }
@@ -281,6 +318,46 @@ public class RestControllerGenerator {
         } catch (IOException e) {
             throw new RuntimeException("Failed to write controller for " + model.entitySimpleName(), e);
         }
+    }
+
+    /**
+     * An {@code @ApiResponse} documenting an RFC 9457 problem body: the Spring {@code ProblemDetail}
+     * schema plus an example of what {@code SpringXposeExceptionHandler} returns, with the
+     * per-field {@code errors} map.
+     */
+    private static CodeBlock problemResponse(String code, String description, String example) {
+        return CodeBlock.of("@$T(responseCode = $S, description = $S,\n"
+                + "    content = @$T(mediaType = $S, schema = @$T(implementation = $T.class),\n"
+                + "        examples = @$T(name = $S, value = $S)))",
+            OA_API_RESPONSE, code, description,
+            OA_CONTENT, "application/problem+json", OA_SCHEMA,
+            ClassName.get("org.springframework.http", "ProblemDetail"),
+            OA_EXAMPLE_OBJECT, "problem", example);
+    }
+
+    /**
+     * Runs the configured {@code Validator} on the mapped entity, before it is saved. Rejections go
+     * to {@code SpringXposeExceptionHandler} as a {@code BindException}, which becomes the same 400
+     * problem as bean validation. {@code DirectFieldBindingResult} reads fields directly, so entities
+     * without getters work.
+     */
+    private static void addCustomValidation(MethodSpec.Builder method, boolean hasValidator, String entity) {
+        if (!hasValidator) return;
+        ClassName bindingResult = ClassName.get("org.springframework.validation", "DirectFieldBindingResult");
+        ClassName bindException = ClassName.get("org.springframework.validation", "BindException");
+        method.addStatement("$T bindingResult = new $T(entity, $S)", bindingResult, bindingResult, decapitalize(entity))
+            .addStatement("validator.validate(entity, bindingResult)")
+            .beginControlFlow("if (bindingResult.hasErrors())")
+            .addStatement("throw new $T(bindingResult)", bindException)
+            .endControlFlow();
+    }
+
+    private static String annotationName(EntityModel model) {
+        return model.storeType() == StoreType.MONGO ? "ExposeDocument" : "ExposeEntity";
+    }
+
+    private static String decapitalize(String s) {
+        return s.isEmpty() ? s : Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     /**
@@ -362,9 +439,9 @@ public class RestControllerGenerator {
                 .addMember("operationId", "$S", "search" + entity)
                 .build())
             .addAnnotation(AnnotationSpec.builder(OA_API_RESPONSES)
-                .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  @$T(responseCode = $S, description = $S)\n}",
+                .addMember("value", "{\n  @$T(responseCode = $S, description = $S),\n  $L\n}",
                     OA_API_RESPONSE, "200", "Matching records",
-                    OA_API_RESPONSE, "400", "Unknown search key or invalid value")
+                    problemResponse("400", "Unknown search key or invalid value", MALFORMED_EXAMPLE))
                 .build())
             .addModifiers(Modifier.PUBLIC)
             .addParameter(ParameterSpec.builder(searchRequestClass, "request")

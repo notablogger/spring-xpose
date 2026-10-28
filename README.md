@@ -239,6 +239,7 @@ public class Note {
 | `authType` | `NONE` | `NONE`, `BASIC`, or `OAUTH2` |
 | `readRoles` / `writeRoles` | `{}` | Role-based access split |
 | `customMapper` | `void.class` | Bring your own Spring bean mapper |
+| `validator` | `void.class` | Bring your own Spring `Validator` bean for rules annotations can't express — see [Custom validation](docs/tech/annotation-reference.md#custom-validation-optional) |
 | `relationMode` | `IDS_FOR_LIST_OBJECT_FOR_SINGLE` | `@ExposeEntity` only — how related entities appear in the DTO |
 
 **Search** — add `Operation.SEARCH` to `expose` and mark fields with `@ExposeField`:
@@ -364,6 +365,7 @@ Run tests:
 - [x] OpenAPI / Swagger UI with auth scheme
 - [x] Request DTO — separate request/response shapes with validation annotation propagation
 - [x] Custom mapper — plug in your own Spring bean via `customMapper = YourMapper.class`
+- [x] Custom validation — plug in a Spring `Validator` via `validator = YourValidator.class`; rejections return the standard `400` problem
 - [x] Search — `Operation.SEARCH` (`POST /api/<path>/search`) with `@ExposeField(filterOperations = …)` on fields: `EQ`, `NE`, ranges, `LIKE`, `IN` / `NOT_IN`, `IS_NULL`, collection fields
 - [x] Relation filters by id — `"categoryId": 5`, `"suppliers_in": [1, 2]`
 - [ ] Relation filters by related attributes — `"category_name": "Books"`

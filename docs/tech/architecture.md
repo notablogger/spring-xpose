@@ -78,6 +78,7 @@ classDiagram
         +String[] writeRoles
         +boolean pageable
         +Class customMapper
+        +Class validator
     }
     class ExposeDocument {
         +String path
@@ -88,6 +89,7 @@ classDiagram
         +String[] writeRoles
         +boolean pageable
         +Class customMapper
+        +Class validator
         <<always MongoDB>>
     }
     class ExposeField {
@@ -282,6 +284,7 @@ ProductController.create(@Valid ProductRequestDto)
         ├── mapper.toEntity(requestDto)           // scalar fields only
         ├── entityManager.getReference(Category, 3)  // FK proxy, no SELECT
         ├── entity.setCategory(proxy)
+        ├── validator.validate(entity, errors)    // only with validator = ... — 400 on rejection
         ├── repository.save(entity)               // INSERT + FK check at flush
         └── mapper.toDto(saved)
         │

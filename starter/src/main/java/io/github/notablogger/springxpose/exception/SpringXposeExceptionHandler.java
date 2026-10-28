@@ -9,15 +9,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.BindException;
+import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import tools.jackson.core.JacksonException;
 
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Global exception handler for all spring-xpose-generated controllers.
@@ -26,7 +29,8 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>{@code 400} — malformed JSON body, an invalid value, or an unknown search key —
  *       keyed by the JSON property in {@code errors} when Jackson reports one</li>
- *   <li>{@code 400} — bean validation failures ({@code @NotBlank}, {@code @Positive}, etc.)</li>
+ *   <li>{@code 400} — bean validation failures ({@code @NotBlank}, {@code @Positive}, etc.)
+ *       and rejections from a custom {@code Validator}</li>
  *   <li>{@code 409} — database constraint violation (duplicate key, FK violation on save)</li>
  *   <li>{@code 409} — optimistic locking conflict ({@code @Version} mismatch)</li>
  *   <li>{@code 422} — relation ID refers to a non-existent entity</li>
@@ -65,12 +69,26 @@ public class SpringXposeExceptionHandler {
     /** Jakarta Validation failures — @NotBlank, @Positive, @Size, etc. */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ProblemDetail> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
-            .collect(Collectors.toMap(
-                FieldError::getField,
-                fe -> fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "invalid",
-                (a, b) -> a + "; " + b
-            ));
+        return validationProblem(ex.getBindingResult());
+    }
+
+    /**
+     * Rejections from the entity's custom {@code Validator} ({@code validator = ...}), thrown by the
+     * generated controller. Same problem as bean validation; errors rejected on the object rather than
+     * a field ({@code errors.reject(...)}) are listed under {@code _global}.
+     */
+    @ExceptionHandler(BindException.class)
+    public ResponseEntity<ProblemDetail> handleBind(BindException ex) {
+        return validationProblem(ex.getBindingResult());
+    }
+
+    private static ResponseEntity<ProblemDetail> validationProblem(BindingResult result) {
+        Map<String, String> fieldErrors = new LinkedHashMap<>();
+        for (ObjectError error : result.getAllErrors()) {
+            String key = error instanceof FieldError fe ? fe.getField() : "_global";
+            String message = error.getDefaultMessage() != null ? error.getDefaultMessage() : "invalid";
+            fieldErrors.merge(key, message, (a, b) -> a + "; " + b);
+        }
 
         ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
         pd.setType(URI.create("urn:springxpose:validation-error"));

@@ -28,7 +28,7 @@ Every generator receives an `EntityModel` record, not the raw `TypeElement`. Thi
 | What it reads | Where it looks |
 |---|---|
 | `@ExposeEntity` attributes | `element.getAnnotation(ExposeEntity.class)` |
-| `customMapper` class name | `AnnotationMirror` (avoids `MirroredTypeException`) |
+| `customMapper` and `validator` class names | `AnnotationMirror` (avoids `MirroredTypeException`) |
 | Scalar fields | `element.getEnclosedElements()` filtered to `FIELD` kind, non-static |
 | `@Id` field | `jakarta.persistence.Id` presence on the field |
 | `@Version` field | `jakarta.persistence.Version` presence on the field |
